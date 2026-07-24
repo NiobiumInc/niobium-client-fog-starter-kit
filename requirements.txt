@@ -1,0 +1,9 @@
+# Installed into a virtualenv by `scripts/setup.sh` (recommended) — the venv is
+# what avoids the PEP 668 "externally-managed-environment" pip error on macOS /
+# modern Python. By hand:
+#   python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+#
+# The harness (harness/*.py) is pure Python 3 standard library. The only
+# dependency is for the niobium-client `scripts/fog` CLI, which needs a TLS CA
+# bundle (macOS python builds often ship none): certifi.
+certifi

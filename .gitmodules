@@ -1,0 +1,3 @@
+[submodule "niobium-client"]
+	path = niobium-client
+	url = https://github.com/NiobiumInc/niobium-client.git
