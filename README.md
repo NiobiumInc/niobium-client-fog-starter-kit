@@ -109,12 +109,11 @@ The submit streams your keys and ciphertext to the worker before anything runs, 
 
 Steps 2 through 4 ran a circuit that was already written. To build one of your own, install Niobium's [FHE application design skill](https://github.com/NiobiumInc/niobium-skills) into your coding agent. It carries an eleven-stage methodology: privacy model, feasibility, scheme and parameter selection, a plaintext twin validated against your own reference computation, then the encrypted program and its Fog deployment.
 
-**a. Point the environment at the client this kit built.** Run these from the kit directory:
+**a. Build the client so the skill can use it.** Run these from the kit directory:
 
 ```bash
-source .venv/bin/activate                        # if this is a new shell
-scripts/build_task.sh                            # already built? this only installs the SDK for a separate app to find
-export NIOBIUM_CLIENT_DIR="$PWD/niobium-client"  # the checkout the skill builds and runs against
+source .venv/bin/activate     # if this is a new shell
+scripts/build_task.sh         # already built? this only installs the SDK for a separate app to find
 ```
 
 **b. Make a folder for the application beside this one.**
@@ -156,13 +155,13 @@ ls .agents/skills/fhe-application-design/SKILL.md   # Codex, Cursor, Copilot, Ge
 
 > **Note:** the skill wakes on the vocabulary of the problem: FHE, homomorphic encryption, encrypted computation, computing on encrypted data, OpenFHE, CKKS, the Niobium Fog. Naming it directly (`use the fhe-application-design skill`) works too, as does describing a computation the computing party must not be able to read.
 
-The skill opens with two questions: how much FHE you have worked with, and whether to write the program in the Niobium DSL (alpha-stage, generates the OpenFHE for you) or in OpenFHE directly (mature, hand-written). Stage 0 provisions the build environment, and with `NIOBIUM_CLIENT_DIR` exported it uses this kit's client, running `make -C niobium-client test-release` against it as its smoke test. For a machine-learning workload, Stage 3 asks where the labeled data and the plaintext model come from, and every later stage is measured against that reference.
+The skill asks one question up front, how much FHE you have worked with, and the rest when it reaches them. At Stage 0 it looks for a niobium-client installation, finds this kit's submodule when your application folder sits beside the kit, and asks whether to use it or pull the FHE-dev container image instead. At Stage 8 it asks whether to write the program in the Niobium DSL (alpha-stage, generates the OpenFHE for you) or in OpenFHE directly (mature, hand-written). For a machine-learning workload, Stage 3 asks where the labeled data and the plaintext model come from, and every later stage is measured against that reference.
 
-**e. Validate it on your own machine.** What gets created is a whole application: the keygen, encrypt, server, and decrypt programs, a `run_test.sh` that runs them end to end and reports how well the application does its job, a `run-in-container.sh` wrapper, a Makefile, and a README of its own. The wrapper runs its command inside the FHE-dev image by default and directly on your machine when `NIOBIUM_CLIENT_DIR` is set, so the commands read the same either way:
+**e. Validate it on your own machine.** What gets created is a whole application: the keygen, encrypt, server, and decrypt programs, a `run_test.sh` that runs them end to end and reports how well the application does its job, a `run.sh` wrapper, a Makefile, and a README of its own. `run.sh` runs its command against whichever environment you chose at Stage 0, and takes `--container` or `--local` when a machine can do both:
 
 ```bash
-./run-in-container.sh "./run_test.sh --cpu"   # plain OpenFHE on your CPU, compared against the twin
-./run-in-container.sh "./run_test.sh --sim"   # the local simulator over the generated trace
+./run.sh "./run_test.sh --cpu"   # plain OpenFHE on your CPU, compared against the twin
+./run.sh "./run_test.sh --sim"   # the local simulator over the generated trace
 ```
 
 Your agent runs these as it iterates. A green `--cpu` run is the gate the methodology sets before the Fog run below.
@@ -173,10 +172,9 @@ A bare `run_test.sh` targets the Fog, and it is the harness default. Your API ke
 
 ```bash
 cd path/to/niobium-client-fog-starter-kit
-source .venv/bin/activate                        # puts `fog` on PATH
-export NIOBIUM_CLIENT_DIR="$PWD/niobium-client"
+source .venv/bin/activate     # puts `fog` on PATH
 cd ../my-fhe-app
-./run-in-container.sh "./run_test.sh"
+./run.sh "./run_test.sh"
 ```
 
 The server step runs under `fog submit --target=FOG`, which provisions a job, streams your keys, ciphertext, and the generated trace to the assigned worker, computes there, and returns the encrypted result for the client side to decrypt and check. The key material moves before any compute starts, as in step 4, so the first submit takes longer than the local runs.
