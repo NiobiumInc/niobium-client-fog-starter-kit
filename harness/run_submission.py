@@ -363,7 +363,7 @@ def main() -> int:
         print(f"\n[harness] the default mode runs '{args.op}' on the Fog, and no worker is "
               "wired in here.")
         print("[harness] Submit it:")
-        print(f"[harness]     fog submit python3 harness/run_submission.py {args.size} "
+        print(f"[harness]     fog submit python3 harness/run_submission.py {params.name} "
               f"--op {args.op} --target FOG --skip-build")
         print("[harness] Get Fog access -> https://console.niobium.co/request-account")
         print(f"[harness] Or run it locally: --cpu (real math here) or --sim (the simulator)")
