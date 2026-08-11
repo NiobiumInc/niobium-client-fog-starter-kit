@@ -166,7 +166,8 @@ How much a job uploads depends on which circuit you run, because the keys are bu
 niobium-client-fog-starter-kit/
 ├─ scripts/
 │   ├─ setup.sh             one-time environment setup (toolchain, submodule, .venv)
-│   └─ build_task.sh        builds the client SDK and the stage binaries
+│   ├─ build_task.sh        builds the client SDK and the stage binaries
+│   └─ clean.sh             removes run artifacts, the build tree, or both
 ├─ harness/
 │   ├─ run_submission.py    drives keygen -> encrypt -> compute -> decrypt -> verify
 │   └─ params.py            instance sizes, input vectors, and expected results

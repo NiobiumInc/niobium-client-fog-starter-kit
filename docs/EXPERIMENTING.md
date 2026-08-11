@@ -11,7 +11,9 @@ The harness brings `build/` up to date with `src/` before each run, so a kernel 
 - **`--cpu`** computes the answer on your machine every run.
 - **`--sim` and the Fog** execute the cached program, compiling it first when there isn't one. The first submit of a new circuit is a cold start: it compiles and then runs on the Fog in the same command.
 
-`--reset` clears the instance's keys and inputs along with the cached programs, which is how you regenerate keys from scratch. `rm -rf dotprod_compute_*` clears just the programs.
+`--reset` clears the instance's keys and inputs along with the cached programs, which is how you regenerate keys from scratch.
+
+`scripts/clean.sh` removes the keys, inputs, compiled programs, and metrics. `--build` also removes the build tree. `--all` removes everything untracked: those two plus the venv, the fetched sources, and the client's build. `--dry-run` lists without deleting.
 
 ## Before editing anything: try switching ops
 
