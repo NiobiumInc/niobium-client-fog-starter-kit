@@ -6,6 +6,26 @@ The same pipeline also runs entirely on your CPU, so you can build the kit and v
 
 If FHE is new to you: fully homomorphic encryption lets a server compute directly on encrypted data. The server never needs the plaintext, and only the holder of the secret key can decrypt the result. The glossary in [FHE terms used in this kit](#fhe-terms-used-in-this-kit) covers the handful of terms the kit relies on.
 
+## Contents
+
+- [What you need](#what-you-need)
+- [Quickstart](#quickstart)
+  - [1. Get Fog access](#1-get-fog-access)
+  - [2. Clone and build](#2-clone-and-build)
+  - [3. Run it locally (verify on CPU)](#3-run-it-locally-verify-on-cpu)
+  - [4. Run it on the Fog](#4-run-it-on-the-fog)
+  - [5. Design and build your own application](#5-design-and-build-your-own-application)
+  - [6. Run your application on the Fog](#6-run-your-application-on-the-fog)
+- [How it works](#how-it-works)
+- [Try the other ops](#try-the-other-ops)
+- [Performance](#performance)
+- [Clean up](#clean-up)
+- [What's in the repo](#whats-in-the-repo)
+- [FHE terms used in this kit](#fhe-terms-used-in-this-kit)
+- [Troubleshooting](#troubleshooting)
+- [Get in touch](#get-in-touch)
+- [License](#license)
+
 ## What you need
 
 - macOS (Apple Silicon or Intel) or Linux. On Windows, use WSL2.
