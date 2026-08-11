@@ -99,6 +99,8 @@ The submit streams your keys and ciphertext to the worker before anything runs, 
 
 ## How it works
 
+*[Back to step 3](#3-run-it-locally-verify-on-cpu)*
+
 The Niobium model is compile once, run many. Compiling captures your OpenFHE computation as a portable `.fhetch` program; it happens on your machine, once per `(op, N)`. Running executes the cached program on a device, and `fog submit` makes that device the Fog's FPGA. A single `fog submit` does both when needed: if the program isn't cached yet it compiles first, then runs it on the FPGA (a cold start), so only the first run of each op pays the compile cost.
 
 Three run modes select who does the arithmetic:
@@ -148,6 +150,8 @@ From here, [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md) walks through editing 
 
 ## Performance
 
+*[Back to Try the other ops](#try-the-other-ops)*
+
 A Fog run prints two worker-side timings:
 
 ```
@@ -189,6 +193,8 @@ niobium-client-fog-starter-kit/
 
 ## FHE terms used in this kit
 
+*[Back to the top](#niobium-client--fog-starter-kit)*
+
 | Term | Meaning here |
 |---|---|
 | ciphertext | An encrypted value. One CKKS ciphertext holds a whole vector. The Fog only ever sees these. |
@@ -199,6 +205,8 @@ niobium-client-fog-starter-kit/
 | evaluation keys | Public key material (`mk.bin`, `rk.bin`) that lets the server multiply and rotate ciphertext without being able to decrypt. The secret key never leaves your machine. |
 
 ## Troubleshooting
+
+*[Back to step 2](#2-clone-and-build)*
 
 | Symptom | Fix |
 |---|---|
