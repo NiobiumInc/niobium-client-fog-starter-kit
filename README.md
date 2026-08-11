@@ -10,6 +10,7 @@ If FHE is new to you: fully homomorphic encryption lets a server compute directl
 
 - macOS (Apple Silicon or Intel) or Linux. On Windows, use WSL2.
 - git, a C++17 compiler, CMake 3.18+, Python 3, and OpenSSL.
+- A coding agent that reads the [FHE design skill](https://github.com/NiobiumInc/niobium-skills), like Claude Code or Codex, to start building applications of your own.
 
 macOS:
 
@@ -41,16 +42,21 @@ You don't need to wait to start: build the kit and run it locally (steps 2–3) 
 git clone https://github.com/NiobiumInc/niobium-client-fog-starter-kit.git
 cd niobium-client-fog-starter-kit
 
-scripts/setup.sh      # checks the toolchain, fetches the niobium-client submodule
-                      # and its OpenFHE source, creates a .venv, and finds OpenSSL
-                      # on macOS. No sudo, nothing global.
+scripts/setup.sh --build      # checks the toolchain, fetches the niobium-client submodule
+                              # and its OpenFHE source, creates a .venv, finds OpenSSL on
+                              # macOS, then runs the long first build. No sudo, nothing global.
 
-source .venv/bin/activate     # do this in every new shell; on macOS it also
-                              # exports OPENSSL_ROOT_DIR so the build gets TLS
-scripts/build_task.sh         # the long first build happens here
+source .venv/bin/activate     # do this in every new shell; puts `fog` on PATH, and on
+                              # macOS exports OPENSSL_ROOT_DIR so a rebuild gets TLS
 ```
 
-`scripts/setup.sh --build` runs the setup and the build as one command; the venv activation is still how later shells get `fog` on PATH.
+Alternatively, run the `--build` steps yourself:
+
+```bash
+scripts/setup.sh              # environment only, no compiling
+source .venv/bin/activate
+scripts/build_task.sh         # the long first build happens here, and after any source edit
+```
 
 **Note:** the first time the client configures, early in the long build, its log prints `fhetch_transport client: TLS enabled (OpenSSL 3.x)`. If you instead see a CMake warning that OpenSSL was not found, stop and fix that first (see [Troubleshooting](#troubleshooting)): the build will finish, but without TLS `fog submit` cannot reach the Fog in step 4.
 
@@ -98,6 +104,86 @@ Pass `--target FOG` explicitly: `fog submit` reads the target from the command i
 ```
 
 The submit streams your keys and ciphertext to the worker before anything runs, so it is not instant; the wait depends on your connection. Let it finish rather than interrupting it, and watch progress with `fog list` from another shell. The full CLI reference is in [docs/FOG_CLI.md](docs/FOG_CLI.md).
+
+### 5. Design and build your own application
+
+Steps 2 through 4 ran a circuit that was already written. To build one of your own, install Niobium's [FHE application design skill](https://github.com/NiobiumInc/niobium-skills) into your coding agent. It carries an eleven-stage methodology: privacy model, feasibility, scheme and parameter selection, a plaintext twin validated against your own reference computation, then the encrypted program and its Fog deployment.
+
+**a. Point the environment at the client this kit built.** Run these from the kit directory:
+
+```bash
+source .venv/bin/activate                        # if this is a new shell
+scripts/build_task.sh                            # already built? this only installs the SDK for a separate app to find
+export NIOBIUM_CLIENT_DIR="$PWD/niobium-client"  # the checkout the skill builds and runs against
+```
+
+**b. Make a folder for the application beside this one.**
+
+```bash
+mkdir -p ../my-fhe-app && cd ../my-fhe-app
+```
+
+**c. Install the skill into that folder.** The installer detects your agent and writes the skill where it reads it:
+
+```bash
+npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
+```
+
+Straight from GitHub instead, no npx:
+
+```bash
+git clone --depth 1 https://github.com/NiobiumInc/niobium-skills /tmp/niobium-skills
+
+# Claude Code, Claude Desktop
+mkdir -p .claude/skills && cp -r /tmp/niobium-skills/skills/fhe-application-design .claude/skills/
+
+# Codex, Cursor, Copilot, Gemini, Windsurf, Cline
+mkdir -p .agents/skills && cp -r /tmp/niobium-skills/skills/fhe-application-design .agents/skills/
+```
+
+Check that it installed:
+
+```bash
+ls .claude/skills/fhe-application-design/SKILL.md   # Claude Code, Claude Desktop
+ls .agents/skills/fhe-application-design/SKILL.md   # Codex, Cursor, Copilot, Gemini, Windsurf, Cline
+```
+
+**d. Start your coding agent in that folder and ask it to build what you want.** Need an idea?
+
+- Score a patient's 30-day readmission risk on a cloud the hospital does not trust with the record.
+- Tell a utility which households can shed load during a peak event, from meter readings each household keeps encrypted.
+- Grade a part from line-sensor readings without the vendor's cloud learning the production volume.
+
+> **Note:** the skill wakes on the vocabulary of the problem: FHE, homomorphic encryption, encrypted computation, computing on encrypted data, OpenFHE, CKKS, the Niobium Fog. Naming it directly (`use the fhe-application-design skill`) works too, as does describing a computation the computing party must not be able to read.
+
+The skill opens with two questions: how much FHE you have worked with, and whether to write the program in the Niobium DSL (alpha-stage, generates the OpenFHE for you) or in OpenFHE directly (mature, hand-written). Stage 0 provisions the build environment, and with `NIOBIUM_CLIENT_DIR` exported it uses this kit's client, running `make -C niobium-client test-release` against it as its smoke test. For a machine-learning workload, Stage 3 asks where the labeled data and the plaintext model come from, and every later stage is measured against that reference.
+
+**e. Validate it on your own machine.** What gets created is a whole application: the keygen, encrypt, server, and decrypt programs, a `run_test.sh` that runs them end to end and reports how well the application does its job, a `run-in-container.sh` wrapper, a Makefile, and a README of its own. The wrapper runs its command inside the FHE-dev image by default and directly on your machine when `NIOBIUM_CLIENT_DIR` is set, so the commands read the same either way:
+
+```bash
+./run-in-container.sh "./run_test.sh --cpu"   # plain OpenFHE on your CPU, compared against the twin
+./run-in-container.sh "./run_test.sh --sim"   # the local simulator over the generated trace
+```
+
+Your agent runs these as it iterates. A green `--cpu` run is the gate the methodology sets before the Fog run below.
+
+### 6. Run your application on the Fog
+
+A bare `run_test.sh` targets the Fog, and it is the harness default. Your API key from step 4 is already in `~/.fog`, so there is nothing new to log into:
+
+```bash
+cd path/to/niobium-client-fog-starter-kit
+source .venv/bin/activate                        # puts `fog` on PATH
+export NIOBIUM_CLIENT_DIR="$PWD/niobium-client"
+cd ../my-fhe-app
+./run-in-container.sh "./run_test.sh"
+```
+
+The server step runs under `fog submit --target=FOG`, which provisions a job, streams your keys, ciphertext, and the generated trace to the assigned worker, computes there, and returns the encrypted result for the client side to decrypt and check. The key material moves before any compute starts, as in step 4, so the first submit takes longer than the local runs.
+
+The Fog runs exactly ring dimension 2^16 and the harness keeps that check on for every submission, so an application parameterized at a smaller ring runs under `--cpu` and `--sim` only.
+
+When you are done, `make clean` in the application folder removes the build tree and the per-run homes; the sources, data, and reports stay.
 
 ## How it works
 
