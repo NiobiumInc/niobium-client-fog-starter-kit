@@ -164,6 +164,19 @@ For the small ops, a job's end-to-end time is split between the worker and uploa
 
 How much a job uploads depends on which circuit you run, because the keys are built for the circuit that uses them. The simple `dot` workload, which multiplies two encrypted vectors and adds up the products, requires 27 MB of keys. The more complex `activation` circuit, which applies a smooth nonlinear function (a cosine, approximated by a degree-8192 polynomial) to every encrypted value before adding them up, requires 216 MB. The CKKS parameters live in [src/dotprod.h](src/dotprod.h) and are worth experimenting with (see [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md)), validating any change end to end. Or run from a host with a faster uplink.
 
+## Clean up
+
+Runs leave keys, encrypted inputs, compiled programs, and metrics on disk, and they add up: the `activation` circuit alone accounts for a few hundred MB.
+
+```bash
+scripts/clean.sh              # keys, inputs, compiled programs, metrics
+scripts/clean.sh --build      # those, plus the build tree
+scripts/clean.sh --all        # those, plus the venv, fetched sources, and the client's build
+scripts/clean.sh --dry-run    # list what would be removed, delete nothing
+```
+
+Everything it removes is untracked, and the next run regenerates what it needs.
+
 ## What's in the repo
 
 ```
