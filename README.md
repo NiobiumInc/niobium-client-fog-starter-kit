@@ -101,7 +101,7 @@ The submit streams your keys and ciphertext to the worker before anything runs, 
 
 ## How it works
 
-*[Back to step 3](#3-run-it-locally-verify-on-cpu)*
+*[Back to Run it locally](#3-run-it-locally-verify-on-cpu)*
 
 The Niobium model is compile once, run many. Compiling captures your OpenFHE computation as a portable `.fhetch` program; it happens on your machine, once per `(op, N)`. Running executes the cached program on a device, and `fog submit` makes that device the Fog's FPGA. A single `fog submit` does both when needed: if the program isn't cached yet it compiles first, then runs it on the FPGA (a cold start), so only the first run of each op pays the compile cost.
 
@@ -221,7 +221,7 @@ niobium-client-fog-starter-kit/
 
 ## Troubleshooting
 
-*[Back to step 2](#2-clone-and-build)*
+*[Back to Clone and build](#2-clone-and-build)*
 
 | Symptom | Fix |
 |---|---|
