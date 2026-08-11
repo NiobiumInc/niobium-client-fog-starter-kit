@@ -28,7 +28,7 @@ else
   [[ -d "$CLIENT_DIR" ]] || { echo "error: NIOBIUM_CLIENT_DIR '$CLIENT_DIR' not found" >&2; exit 1; }
 fi
 
-echo "=== [2/3] build the client's bundled OpenFHE + libnbfhetch + transport (make release) ==="
+echo "=== [2/3] build + install the client's OpenFHE + libnbfhetch + transport (make release, install-release) ==="
 echo "         (heavy the first time — compiles OpenFHE once; a no-op if already built)"
 if [[ "$(uname -s)" == "Darwin" && -z "${OPENSSL_ROOT_DIR:-}" ]]; then
   echo "warning (macOS): OPENSSL_ROOT_DIR is unset — the client's HTTPS transport may build" >&2
@@ -40,6 +40,21 @@ make -C "$CLIENT_DIR" release        # installs OpenFHE to <client>/vendor/lib/o
 OPENFHE_PREFIX="$CLIENT_DIR/vendor/lib/openfhe"
 [[ -d "$OPENFHE_PREFIX" ]] || {
   echo "error: client OpenFHE not at $OPENFHE_PREFIX after 'make release'" >&2; exit 1; }
+
+# `release` builds libnbfhetch but leaves it in the build tree. `install-release`
+# puts it, its headers, and NiobiumFhetchConfig.cmake under
+# <client>/vendor/lib/niobium-client, which is what lets a SEPARATE app resolve the
+# SDK with find_package(NiobiumFhetch) — the stages in this repo link it directly,
+# so this step is for the apps you build next against the same client.
+make -C "$CLIENT_DIR" install-release
+SDK_PREFIX="$CLIENT_DIR/vendor/lib/niobium-client"
+# The config is installed to <prefix>/<libdir>/cmake/NiobiumFhetch, and <libdir> is
+# lib or lib64 depending on the platform, so look for the file rather than a fixed path.
+if [[ -z "$(find "$SDK_PREFIX" -name NiobiumFhetchConfig.cmake -print -quit 2>/dev/null)" ]]; then
+  echo "warning: no NiobiumFhetchConfig.cmake under $SDK_PREFIX. This repo still builds" >&2
+  echo "         (it links the client directly), but a separate app resolving the SDK" >&2
+  echo "         with find_package(NiobiumFhetch) will not configure." >&2
+fi
 
 echo "=== [3/3] build the dot-product stages + SDK compute server against the client's OpenFHE ==="
 # Wipe build/ if it was configured for a different repo path or a different
