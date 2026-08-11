@@ -82,10 +82,8 @@ usint MeasureDepth(Op op, int n) {
     auto b  = cc->Encrypt(kp.publicKey, pt);
 
     auto r = Kernel(cc, a, b, n, op, 1.0, 0.0);
-    // GetLevel() counts the rescales the circuit performed. A result still
-    // carrying a squared scale needs one more level to rescale into, so add it.
-    usint used = static_cast<usint>(r->GetLevel()) + (r->GetNoiseScaleDeg() > 1 ? 1 : 0);
-    return used > 0 ? used : 1;                    // OpenFHE wants at least one
+    const usint used = static_cast<usint>(r->GetLevel());   // rescales performed
+    return used > 0 ? used : 1;                             // OpenFHE wants at least one
 }
 
 void SaveContextAndKeys(const fs::path& keydir,

@@ -35,7 +35,7 @@ make -C ~/niobium-client release          # builds its OpenFHE + libnbfhetch + t
 # then, per app / per shell:
 export NIOBIUM_CLIENT_DIR=~/niobium-client
 scripts/build_task.sh                     # skips the submodule; builds this app against ~/niobium-client
-python3 harness/run_submission.py 0 --op dot                           # compile + CPU-verify
+python3 harness/run_submission.py 0 --op dot --cpu                     # verify on CPU
 "$NIOBIUM_CLIENT_DIR"/scripts/fog submit \
     python3 harness/run_submission.py 0 --op dot --target FOG --skip-build   # run on the Fog
 ```

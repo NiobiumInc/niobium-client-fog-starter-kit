@@ -34,15 +34,12 @@ using namespace lbcrypto;
 namespace dotprod {
 
 // ── CKKS parameters ───────────────────────────────────────────────────────
-// RING_DIM is pinned to 65536. At MULT_DEPTH=20 the 128-bit security check
-// needs a ring this large (see docs/EXPERIMENTING.md). Lowering MULT_DEPTH
-// (the first four ops fit in 2) would let OpenFHE use a smaller ring, which
-// shrinks the upload — experiment with the CKKS parameters and validate any
-// change end to end.
+// RING_DIM is pinned to 65536, which is the ring the Fog runs. MULT_DEPTH is the
+// ceiling a circuit may reach: each op's keys are generated at the depth that
+// op's own circuit consumes (see DeclaredDepth / MeasureDepth below), and 20 is
+// the safe maximum here, since 24 or more trips OpenFHE's 128-bit security check.
 inline constexpr usint RING_DIM        = 65536;
-inline constexpr usint MULT_DEPTH      = 20;  // deep enough for the activation op; 20 is the safe
-                                              // max at RING_DIM=65536 (24+ trips OpenFHE's 128-bit
-                                              // security check).
+inline constexpr usint MULT_DEPTH      = 20;
 inline constexpr usint SCALING_MOD_SIZE = 40;
 inline constexpr usint FIRST_MOD_SIZE   = 60;
 
@@ -63,10 +60,11 @@ inline constexpr int MAX_N = 32;
 // disk. Raise it if a deeper circuit needs headroom at decrypt.
 inline constexpr uint32_t RESULT_TOWERS = 1;
 
-// ── ACTIVATION op knobs (compile-time; edit + rebuild + --reset to retune) ──
-// The compute lever: a degree-D Chebyshev eval costs ~log2(D)+1 levels, so keep
-// ACT_REPEAT*(log2(ACT_DEGREE)+1) <= MULT_DEPTH. Raise DEGREE/REPEAT until compute
-// dominates wall time.
+// ── ACTIVATION op knobs (compile-time) ─────────────────────────────────────
+// The compute lever: a degree-D Chebyshev eval costs ~log2(D)+1 levels. Raise
+// DEGREE/REPEAT until compute dominates wall time, keeping
+// ACT_REPEAT*(log2(ACT_DEGREE)+1) within MULT_DEPTH, and refresh the op's entry
+// in DeclaredDepth() afterwards (docs/EXPERIMENTING.md, "Depth and key size").
 inline constexpr uint32_t ACT_DEGREE = 8192;  // ~14 levels; the compute knob
 inline constexpr uint32_t ACT_REPEAT = 1;     // chained evals (one big eval > many small)
 inline constexpr double   ACT_LO     = 0.0;   // Chebyshev domain: must cover a_i in [1, MAX_N]
@@ -125,8 +123,8 @@ double DecryptSlot0(const CryptoContext<DCRTPoly>& cc,
 // ── The example operations ────────────────────────────────────────────────
 // A handful of circuits, selected by --op, each leaving a scalar in slot 0 via
 // a rotate-and-sum reduction. The first four are trivial on purpose (DOT/
-// WEIGHTED = one ct*ct; MUL_CONST = one ct*plaintext); ACTIVATION burns most of
-// the MULT_DEPTH=20 budget on a high-degree Chebyshev eval (knobs above).
+// WEIGHTED = one ct*ct; MUL_CONST = one ct*plaintext); ACTIVATION spends fifteen
+// levels on a high-degree Chebyshev eval (knobs above).
 enum class Op {
     ADD,        // slot0 = sum_i (a_i + b_i)
     MUL_CONST,  // slot0 = sum_i (k * a_i)          (ciphertext * plaintext scalar)
