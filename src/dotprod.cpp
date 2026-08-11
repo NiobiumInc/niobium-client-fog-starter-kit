@@ -186,6 +186,17 @@ std::vector<int32_t> RotationIndices(int n) {
     return idx;
 }
 
+bool UsesVectorB(Op op) {
+    switch (op) {
+        case Op::ADD:                           // EvalAdd(a, b)
+        case Op::DOT:                           // EvalMult(a, b)
+        case Op::WEIGHTED:   return true;       // EvalMult(a, b) + bias
+        case Op::MUL_CONST:                     // EvalMult(a, plaintext k)
+        case Op::ACTIVATION: return false;      // Chebyshev over a alone
+    }
+    return true;                                // unknown op: assume it reads both
+}
+
 bool NeedsRelinKey(Op op) {
     switch (op) {
         case Op::ADD:                           // EvalAdd(ct, ct)

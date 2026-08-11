@@ -138,6 +138,11 @@ const char* OpName(Op op);
 // server stage does not load it for them.
 bool NeedsRelinKey(Op op);
 
+// True for the ops whose circuit reads the second vector. mul_const multiplies a
+// by a plaintext scalar and activation transforms a alone, so tagging b for them
+// would upload a ciphertext the circuit never touches.
+bool UsesVectorB(Op op);
+
 // Depth each shipped op needs, recorded from a measurement so a run of a known
 // example does not pay to rediscover it. Returns 0 for an op that isn't listed,
 // which is the signal to measure. Editing one of these kernels means the

@@ -110,11 +110,15 @@ int main(int argc, char* argv[]) try {
     const bool needRelin = dotprod::NeedsRelinKey(op);
     auto cc = dotprod::LoadContext(keydir, needRelin, /*withRotationKeys=*/true);
 
+    // Load the inputs this circuit reads. mul_const multiplies by a plaintext
+    // scalar and activation transforms a alone, so b stays on disk for them.
+    const bool usesB = dotprod::UsesVectorB(op);
     Ciphertext<DCRTPoly> a, b;
     auto qd = std::filesystem::path(queryDir);
-    if (!Serial::DeserializeFromFile((qd / "a.ct").string(), a, SerType::BINARY) ||
-        !Serial::DeserializeFromFile((qd / "b.ct").string(), b, SerType::BINARY))
-        throw std::runtime_error("cannot load a.ct/b.ct from " + queryDir);
+    if (!Serial::DeserializeFromFile((qd / "a.ct").string(), a, SerType::BINARY))
+        throw std::runtime_error("cannot load a.ct from " + queryDir);
+    if (usesB && !Serial::DeserializeFromFile((qd / "b.ct").string(), b, SerType::BINARY))
+        throw std::runtime_error("cannot load b.ct from " + queryDir);
 
     std::cout << "[compute-sdk] ring=" << cc->GetRingDimension()
               << " n=" << n << " op=" << dotprod::OpName(op) << "\n";
@@ -145,7 +149,7 @@ int main(int argc, char* argv[]) try {
     // Tag order: context, then inputs, then keys.
     niobium::compiler().capture_crypto_context(cc);
     niobium::compiler().tag_input("a", a);
-    niobium::compiler().tag_input("b", b);
+    if (usesB) niobium::compiler().tag_input("b", b);   // untagged means not uploaded
     niobium::compiler().tag_keys(cc);
 
     // Gate the *record* on the program cache: the first run of an (op, N) writes
