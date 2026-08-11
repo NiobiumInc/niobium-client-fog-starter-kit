@@ -30,7 +30,8 @@ int main(int argc, char* argv[]) try {
                   << " --keydir <dir> --a <csv> --b <csv> --out <dir>\n"; return 1;
     }
 
-    auto cc = dotprod::LoadContextWithEvalKeys(keydir);
+    // encrypt uses pk only, so it loads no evaluation keys (348 MB unread).
+    auto cc = dotprod::LoadContext(keydir);
     auto pk = dotprod::LoadPublicKey(keydir, cc);
     auto a  = dotprod::ParseVector(aCsv);
     auto b  = dotprod::ParseVector(bCsv);

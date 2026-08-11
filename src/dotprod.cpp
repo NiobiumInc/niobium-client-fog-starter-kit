@@ -55,18 +55,23 @@ void SaveContextAndKeys(const fs::path& keydir,
         throw std::runtime_error("failed to write rk.bin");
 }
 
-CryptoContext<DCRTPoly> LoadContextWithEvalKeys(const fs::path& keydir) {
+CryptoContext<DCRTPoly> LoadContext(const fs::path& keydir,
+                                    bool withRelinKey, bool withRotationKeys) {
     CryptoContext<DCRTPoly> cc;
     if (!Serial::DeserializeFromFile((keydir / "cc.bin").string(), cc, SerType::BINARY))
         throw std::runtime_error("cannot load cc.bin from " + keydir.string());
 
-    std::ifstream mkfs((keydir / "mk.bin").string(), std::ios::binary);
-    if (!mkfs.good() || !cc->DeserializeEvalMultKey(mkfs, SerType::BINARY))
-        throw std::runtime_error("cannot load mk.bin");
+    if (withRelinKey) {
+        std::ifstream mkfs((keydir / "mk.bin").string(), std::ios::binary);
+        if (!mkfs.good() || !cc->DeserializeEvalMultKey(mkfs, SerType::BINARY))
+            throw std::runtime_error("cannot load mk.bin");
+    }
 
-    std::ifstream rkfs((keydir / "rk.bin").string(), std::ios::binary);
-    if (!rkfs.good() || !cc->DeserializeEvalAutomorphismKey(rkfs, SerType::BINARY))
-        throw std::runtime_error("cannot load rk.bin");
+    if (withRotationKeys) {
+        std::ifstream rkfs((keydir / "rk.bin").string(), std::ios::binary);
+        if (!rkfs.good() || !cc->DeserializeEvalAutomorphismKey(rkfs, SerType::BINARY))
+            throw std::runtime_error("cannot load rk.bin");
+    }
     return cc;
 }
 
@@ -122,9 +127,27 @@ const char* OpName(Op op) {
     return "?";
 }
 
+std::vector<int32_t> RotationIndices(int n) {
+    std::vector<int32_t> idx;
+    for (int32_t r = 1; r < n; r <<= 1)         // the rotate-and-sum shifts
+        idx.push_back(r);
+    return idx;
+}
+
+bool NeedsRelinKey(Op op) {
+    switch (op) {
+        case Op::ADD:                           // EvalAdd(ct, ct)
+        case Op::MUL_CONST:  return false;      // EvalMult(ct, plaintext scalar)
+        case Op::DOT:                           // EvalMult(ct, ct)
+        case Op::WEIGHTED:                      // EvalMult(ct, ct) + bias
+        case Op::ACTIVATION: return true;       // Chebyshev: many EvalMult(ct, ct)
+    }
+    return true;                                // unknown op: assume it multiplies
+}
+
 static Ciphertext<DCRTPoly> ReduceSum(const CryptoContext<DCRTPoly>& cc,
                                       Ciphertext<DCRTPoly> acc, int n) {
-    for (int r = 1; r < n; r <<= 1)             // rotate-and-sum into slot 0
+    for (int32_t r : RotationIndices(n))        // rotate-and-sum into slot 0
         acc = cc->EvalAdd(acc, cc->EvalRotate(acc, r));
     return acc;
 }

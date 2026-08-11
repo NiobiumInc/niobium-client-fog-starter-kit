@@ -46,9 +46,16 @@ inline constexpr usint MULT_DEPTH      = 20;  // deep enough for the activation 
 inline constexpr usint SCALING_MOD_SIZE = 50;
 inline constexpr usint FIRST_MOD_SIZE   = 60;
 
-// Largest vector length the generated rotation keys support (rotate-and-sum uses
-// powers of two < N). Toy uses N=8, small uses N=32; both fit under 32.
+// Largest vector length dp_keygen will size rotation keys for (rotate-and-sum
+// uses powers of two < N). Toy uses N=8, small uses N=32; both fit under 32.
 inline constexpr int MAX_N = 32;
+
+// Towers left in the result ciphertext once the circuit is done. Every op leaves
+// its scalar in slot 0 carrying whatever is left of the modulus chain, and
+// decrypting that value needs only the last tower. cc->Compress() drops the rest,
+// shrinking the ciphertext that travels back from the server and the result.ct on
+// disk. Raise it if a deeper circuit needs headroom at decrypt.
+inline constexpr uint32_t RESULT_TOWERS = 1;
 
 // ── ACTIVATION op knobs (compile-time; edit + rebuild + --reset to retune) ──
 // The compute lever: a degree-D Chebyshev eval costs ~log2(D)+1 levels, so keep
@@ -63,6 +70,13 @@ inline constexpr double   ACT_HI     = 33.0;  // MAX_N=32 < 33
 // ciphertexts, and the compiled program all line up).
 CryptoContext<DCRTPoly> BuildContext();
 
+// The shifts the rotate-and-sum reduction performs over N slots, and the only
+// rotations any op does. dp_keygen generates keys for exactly this set, and
+// ReduceSum() walks the same list, so key material and circuit cannot drift.
+// A new op that rotates differently extends this function, in one place.
+std::vector<int32_t> RotationIndices(int n);
+
+
 // Persist / load the crypto context + key material. keydir layout:
 //   cc.bin  public context      pk.bin  public key
 //   sk.bin  secret key (CLIENT-ONLY)     mk.bin  eval-mult (relin) key
@@ -71,9 +85,15 @@ void SaveContextAndKeys(const std::filesystem::path& keydir,
                         const CryptoContext<DCRTPoly>& cc,
                         const KeyPair<DCRTPoly>& kp);
 
-// Load cc + eval-mult + rotation keys INTO the returned context (so tag_keys()
-// and EvalMult/EvalRotate work). Does not touch the secret key.
-CryptoContext<DCRTPoly> LoadContextWithEvalKeys(const std::filesystem::path& keydir);
+// Load cc, plus whichever evaluation keys the caller is about to use, INTO the
+// returned context. Loading a key is what puts it in the context, and the server
+// stage's tag_keys() uploads exactly what the context holds, so a stage that
+// loads nothing extra ships nothing extra: `add` and `mul_const` leave the 87 MB
+// mk.bin on disk, and the client stages (encrypt, decrypt) load neither eval key.
+// Never touches the secret key.
+CryptoContext<DCRTPoly> LoadContext(const std::filesystem::path& keydir,
+                                    bool withRelinKey = false,
+                                    bool withRotationKeys = false);
 
 PublicKey<DCRTPoly>  LoadPublicKey(const std::filesystem::path& keydir,
                                    const CryptoContext<DCRTPoly>& cc);
@@ -105,6 +125,12 @@ enum class Op {
 
 Op   ParseOp(const std::string& s);           // throws on unknown
 const char* OpName(Op op);
+
+// True for the ops that multiply ciphertext by ciphertext and therefore need the
+// relinearization key (mk.bin, ~87 MB at these parameters). `add` adds, and
+// `mul_const` multiplies by a plaintext scalar, so neither needs one, and the
+// server stage does not load it for them.
+bool NeedsRelinKey(Op op);
 
 // Run the selected circuit. k is used only by MUL_CONST, bias only by WEIGHTED.
 // Pure OpenFHE — the SDK's probes fire on these calls when the TU is built
