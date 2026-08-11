@@ -8,23 +8,25 @@ If FHE is new to you: fully homomorphic encryption lets a server compute directl
 
 ## Contents
 
-- [What you need](#what-you-need)
-- [Quickstart](#quickstart)
-  - [1. Get Fog access](#1-get-fog-access)
-  - [2. Clone and build](#2-clone-and-build)
-  - [3. Run it locally (verify on CPU)](#3-run-it-locally-verify-on-cpu)
-  - [4. Run it on the Fog](#4-run-it-on-the-fog)
-  - [5. Design and build your own application](#5-design-and-build-your-own-application)
-  - [6. Run your application on the Fog](#6-run-your-application-on-the-fog)
-- [How it works](#how-it-works)
-- [Try the other ops](#try-the-other-ops)
-- [Performance](#performance)
-- [Clean up](#clean-up)
-- [What's in the repo](#whats-in-the-repo)
-- [FHE terms used in this kit](#fhe-terms-used-in-this-kit)
-- [Troubleshooting](#troubleshooting)
-- [Get in touch](#get-in-touch)
-- [License](#license)
+- [Niobium Client + Fog Starter Kit](#niobium-client--fog-starter-kit)
+  - [Contents](#contents)
+  - [What you need](#what-you-need)
+  - [Quickstart](#quickstart)
+    - [1. Get Fog access](#1-get-fog-access)
+    - [2. Clone and build](#2-clone-and-build)
+    - [3. Run it locally (verify on CPU)](#3-run-it-locally-verify-on-cpu)
+    - [4. Run it on the Fog](#4-run-it-on-the-fog)
+    - [5. Design and build your own application](#5-design-and-build-your-own-application)
+    - [6. Run your application on the Fog](#6-run-your-application-on-the-fog)
+  - [How it works](#how-it-works)
+  - [Try the other ops](#try-the-other-ops)
+  - [Performance](#performance)
+  - [Clean up](#clean-up)
+  - [What's in the repo](#whats-in-the-repo)
+  - [FHE terms used in this kit](#fhe-terms-used-in-this-kit)
+  - [Troubleshooting](#troubleshooting)
+  - [Get in touch](#get-in-touch)
+  - [License](#license)
 
 ## What you need
 
@@ -128,6 +130,8 @@ The submit streams your keys and ciphertext to the worker before anything runs, 
 ### 5. Design and build your own application
 
 Steps 2 through 4 ran a circuit that was already written. To build one of your own, install Niobium's [FHE application design skill](https://github.com/NiobiumInc/niobium-skills) into your coding agent. It carries an eleven-stage methodology: privacy model, feasibility, scheme and parameter selection, a plaintext twin validated against your own reference computation, then the encrypted program and its Fog deployment.
+
+For this step, we recommend allotting 30 - 60 minutes to build your first design using the Niobium AI skill.
 
 **a. Build the client so the skill can use it.** Run these from the kit directory:
 
