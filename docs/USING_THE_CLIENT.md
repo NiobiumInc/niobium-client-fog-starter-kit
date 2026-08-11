@@ -35,9 +35,9 @@ make -C ~/niobium-client release          # builds its OpenFHE + libnbfhetch + t
 # then, per app / per shell:
 export NIOBIUM_CLIENT_DIR=~/niobium-client
 scripts/build_task.sh                     # skips the submodule; builds this app against ~/niobium-client
-python3 harness/run_submission.py 0 --op dot --cpu                     # verify on CPU
+python3 harness/run_submission.py toy --op dot --cpu                     # verify on CPU
 "$NIOBIUM_CLIENT_DIR"/scripts/fog submit \
-    python3 harness/run_submission.py 0 --op dot --target FOG --skip-build   # run on the Fog
+    python3 harness/run_submission.py toy --op dot --target FOG --skip-build   # run on the Fog
 ```
 
 > The one-time local setup is the same for both modes (submodule or standalone) and isn't per-app: the toolchain ([What you need](../README.md#what-you-need)) and the API key via `fog login` (see the [README Quickstart, step 4](../README.md#4-run-it-on-the-fog) or [`FOG_CLI.md`](FOG_CLI.md)). Do it once; every app and client mode reuses `~/.fog`.

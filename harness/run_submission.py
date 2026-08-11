@@ -47,6 +47,21 @@ BUILD = ROOT / "build"                              # scripts/build_task.sh outp
 CLIENT = Path(os.environ.get("NIOBIUM_CLIENT_DIR", ROOT / "niobium-client"))
 
 
+def instance_arg(value: str) -> int:
+    """Resolve the instance argument to its index.
+
+    The run prints the instance by name and writes its artifacts under that name,
+    so the command line takes the same name. The indices stay valid.
+    """
+    by_name = {instance_name(s): s for s in range(TOY, SMALL + 1)}
+    if value in by_name:
+        return by_name[value]
+    if value.isdigit() and TOY <= int(value) <= SMALL:
+        return int(value)
+    raise argparse.ArgumentTypeError(
+        f"unknown instance '{value}' (choose from {', '.join(by_name)})")
+
+
 def compute_binary() -> str:
     """The only compute stage — dp_compute_sdk. It records the program on a cache
     miss and, in --sim / the Fog mode, executes it through the simulator or the
@@ -283,8 +298,9 @@ def main() -> int:
     # or piped (a Fog submit, a log file) rather than a terminal.
     sys.stdout.reconfigure(line_buffering=True)
     p = argparse.ArgumentParser(description="Run the encrypted dot-product workload.")
-    p.add_argument("size", type=int, choices=range(TOY, SMALL + 1),
-                   help="Instance size (0=toy N=8, 1=small N=32).")
+    p.add_argument("size", type=instance_arg, metavar="{toy,small}",
+                   help="Which instance to run: toy (8-element vectors) or small "
+                        "(32-element). The indices 0 and 1 also work.")
     p.add_argument("--op", choices=OPS, default="dot",
                    help="Which tiny circuit to run (default dot). Each leaves a "
                         "scalar in slot 0; see docs/NIOBIUM_CLIENT_TRANSPORT.md.")

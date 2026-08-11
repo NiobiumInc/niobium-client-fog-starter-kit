@@ -28,8 +28,8 @@ The kit ships five circuits, and `--op` selects one. Each caches its own compile
 | `activation` | Σ cos(aᵢ) | a degree-8192 Chebyshev polynomial on ciphertext, the deep-circuit workout |
 
 ```bash
-python3 harness/run_submission.py 0 --op add --cpu        # -> 72
-python3 harness/run_submission.py 0 --op mul_const --cpu  # -> 108
+python3 harness/run_submission.py toy --op add --cpu        # -> 72
+python3 harness/run_submission.py toy --op mul_const --cpu  # -> 108
 ```
 
 ## Two kinds of edit
@@ -47,7 +47,7 @@ The workload is spread across two files. [../src/dotprod.cpp](../src/dotprod.cpp
 Run it:
 
 ```bash
-python3 harness/run_submission.py 0 --op dot --cpu
+python3 harness/run_submission.py toy --op dot --cpu
 ```
 
 The expected value moves from 120 to 36 (`a = [1..8]` dotted with ones), and the PASS means the encrypted pipeline (encrypt, compile, run, decrypt) computed the same 36 from your edited inputs. The harness derives the expected value from the file you just changed, never from a hardcoded answer.
@@ -70,7 +70,7 @@ The kernels are compiled code, so rebuild, then run:
 
 ```bash
 scripts/build_task.sh
-python3 harness/run_submission.py 0 --op dot --cpu       # expected and result are now 240.0
+python3 harness/run_submission.py toy --op dot --cpu       # expected and result are now 240.0
 ```
 
 To add a brand-new op instead of bending `dot`, the next section walks one through end to end.
@@ -137,13 +137,13 @@ and give `expected()` the matching branch, so the harness knows the cleartext an
 
 ```bash
 scripts/build_task.sh
-python3 harness/run_submission.py 0 --op sumsq --cpu       # a = [1..8]  ->  sum of squares = 204
+python3 harness/run_submission.py toy --op sumsq --cpu       # a = [1..8]  ->  sum of squares = 204
 ```
 
 Expect `result=204.0 ... -> PASS`. It runs on the Fog exactly like a built-in op:
 
 ```bash
-fog submit python3 harness/run_submission.py 0 --op sumsq --target FOG --skip-build
+fog submit python3 harness/run_submission.py toy --op sumsq --target FOG --skip-build
 ```
 
 ## Longer vectors

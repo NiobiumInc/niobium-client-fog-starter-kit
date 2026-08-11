@@ -59,7 +59,7 @@ scripts/build_task.sh         # the long first build happens here
 `--cpu` computes with plain OpenFHE on your machine, so it needs no account and no device. The toy instance packs `a = [1,2,...,8]` and `b = [8,7,...,1]`, so the dot product is 120:
 
 ```bash
-python3 harness/run_submission.py 0 --op dot --cpu   # 0 selects the toy instance (N=8)
+python3 harness/run_submission.py toy --op dot --cpu   # toy = 8-element vectors
 ```
 
 ```
@@ -69,7 +69,7 @@ python3 harness/run_submission.py 0 --op dot --cpu   # 0 selects the toy instanc
 [harness] got=120.0 expected=120.0 rel_err=0.0 (tol=0.01) -> PASS
 ```
 
-The first argument picks the instance: `0` selects 8-element vectors, `1` selects 32-element ones. Every circuit runs at either size.
+The first argument picks the instance: `toy` selects 8-element vectors, `small` selects 32-element ones. Every circuit runs at either size.
 
 `--sim` is the other local mode: it executes the compiled program through the bundled FHETCH simulator, which is the account-free rehearsal of a Fog run. [How it works](#how-it-works) explains the compile/run split.
 
@@ -83,7 +83,7 @@ source .venv/bin/activate            # if this is a new shell; puts `fog` on PAT
 fog login -u you@yourcompany.com     # console email; prompts for password
 fog list                             # confirms auth (an empty list is fine)
 
-fog submit python3 harness/run_submission.py 0 --op dot --target FOG --skip-build
+fog submit python3 harness/run_submission.py toy --op dot --target FOG --skip-build
 ```
 
 Pass `--target FOG` explicitly: `fog submit` reads the target from the command itself, and exits with `--target is required` without it.
@@ -143,10 +143,10 @@ The harness selects a circuit with `--op`. Each computes a scalar into slot 0 an
 | `activation` | Σ cos(aᵢ) | a degree-8192 Chebyshev polynomial on ciphertext, the deep-circuit workout |
 
 ```bash
-python3 harness/run_submission.py 0 --op add --cpu   # then mul_const, weighted, activation
+python3 harness/run_submission.py toy --op add --cpu   # then mul_const, weighted, activation
 ```
 
-Each op caches its own compiled program. Instance size `1` runs the same ops on 32-element vectors, and every op runs on the Fog through `fog submit` as in the Quickstart: the first submit of a new op is a cold start, and later runs reuse the cached program.
+Each op caches its own compiled program. The `small` instance runs the same ops on 32-element vectors, and every op runs on the Fog through `fog submit` as in the Quickstart: the first submit of a new op is a cold start, and later runs reuse the cached program.
 
 From here, [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md) walks through editing the inputs, adding a new op end to end, and, once you've run the built-ins, dropping in your own workload. To build the client once and share it across several apps, see [docs/USING_THE_CLIENT.md](docs/USING_THE_CLIENT.md).
 

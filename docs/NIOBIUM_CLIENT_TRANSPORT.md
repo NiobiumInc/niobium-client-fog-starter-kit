@@ -29,7 +29,7 @@ All three use the same binary (`dp_compute_sdk`) and the same OpenFHE (the clien
 
 ```bash
 scripts/build_task.sh                                    # builds the client's OpenFHE + the stages
-python3 harness/run_submission.py 0 --op dot --cpu       # -> PASS
+python3 harness/run_submission.py toy --op dot --cpu       # -> PASS
 ```
 
 No server, no network. `dp_compute_sdk` computes the result through the client's OpenFHE and writes it, so `dp_decrypt` confirms `result == expected`.
@@ -37,7 +37,7 @@ No server, no network. `dp_compute_sdk` computes the result through the client's
 ### Mode 2: `--sim` (no account)
 
 ```bash
-python3 harness/run_submission.py 0 --op dot --sim       # -> PASS
+python3 harness/run_submission.py toy --op dot --sim       # -> PASS
 ```
 
 The compiled program runs through `fhetch_sim`, the simulator the client build produces, so this exercises the compile path and the program itself rather than the OpenFHE calls. The harness points `NBCC_FHETCH_SIM` at the binary in your client build.
