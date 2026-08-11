@@ -43,8 +43,14 @@ inline constexpr usint RING_DIM        = 65536;
 inline constexpr usint MULT_DEPTH      = 20;  // deep enough for the activation op; 20 is the safe
                                               // max at RING_DIM=65536 (24+ trips OpenFHE's 128-bit
                                               // security check).
-inline constexpr usint SCALING_MOD_SIZE = 50;
+inline constexpr usint SCALING_MOD_SIZE = 40;
 inline constexpr usint FIRST_MOD_SIZE   = 60;
+
+// Hybrid key switching splits the modulus chain into this many digits, and an
+// evaluation key carries one column per digit. Fewer digits means smaller keys
+// and a larger auxiliary modulus, which OpenFHE checks against the security
+// level when it builds the context.
+inline constexpr uint32_t KEY_SWITCH_DIGITS = 1;
 
 // Largest vector length dp_keygen will size rotation keys for (rotate-and-sum
 // uses powers of two < N). Toy uses N=8, small uses N=32; both fit under 32.

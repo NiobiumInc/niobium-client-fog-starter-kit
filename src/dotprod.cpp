@@ -28,6 +28,7 @@ CryptoContext<DCRTPoly> BuildContext(usint depth) {
     params.SetScalingModSize(SCALING_MOD_SIZE);
     params.SetFirstModSize(FIRST_MOD_SIZE);
     params.SetSecurityLevel(HEStd_128_classic);
+    params.SetNumLargeDigits(KEY_SWITCH_DIGITS);
     // Pin the ring dimension (see dotprod.h). At MULT_DEPTH=20 the 128-bit
     // security check needs a ring this large (20 is the safe max here).
     params.SetRingDim(RING_DIM);
