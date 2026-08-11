@@ -18,27 +18,40 @@
 #include <vector>
 
 int main(int argc, char* argv[]) try {
-    std::string keydir;
+    std::string keybase;
     int n = 0;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if (a == "--keydir" && i + 1 < argc) keydir = argv[++i];
+        if (a == "--keybase" && i + 1 < argc) keybase = argv[++i];
         else if (a == "--n" && i + 1 < argc) n = std::stoi(argv[++i]);
         else if (a == "--help" || a == "-h") {
-            std::cerr << "Usage: " << argv[0] << " --keydir <dir> --n <N>\n"; return 0;
+            std::cerr << "Usage: " << argv[0] << " --keybase <dir> --n <N>\n"; return 0;
         } else { std::cerr << "Unknown arg: " << a << "\n"; return 1; }
     }
-    if (keydir.empty() || n <= 0) {
-        std::cerr << "Usage: " << argv[0] << " --keydir <dir> --n <N>\n"
+    if (keybase.empty() || n <= 0) {
+        std::cerr << "Usage: " << argv[0] << " --keybase <dir> --n <N>\n"
                   << "  --n is the vector length these keys serve; the rotation keys are "
-                     "sized to it.\n"; return 1;
+                     "sized to it.\n"
+                  << "  Keys land in <keybase>/<parameter fingerprint>/keys, and that path "
+                     "is printed as KEYDIR=.\n"; return 1;
+    }
+
+    // One directory per parameter set. The path is printed for the harness to
+    // read, so nothing has to reconstruct the naming rule in two languages.
+    const usint depth = dotprod::MULT_DEPTH;
+    const std::filesystem::path keydir =
+        std::filesystem::path(keybase) / dotprod::ContextFingerprint(depth) / "keys";
+    if (std::filesystem::exists(keydir / "cc.bin")) {
+        std::cout << "KEYDIR=" << keydir.string() << "\n";
+        std::cerr << "[keygen] reusing keys for " << dotprod::ContextFingerprint(depth) << "\n";
+        return 0;
     }
     if (n > dotprod::MAX_N) {
         std::cerr << "[keygen] error: --n " << n << " exceeds MAX_N (" << dotprod::MAX_N
                   << "); raise MAX_N in src/dotprod.h and rebuild.\n"; return 1;
     }
 
-    auto cc = dotprod::BuildContext();
+    auto cc = dotprod::BuildContext(depth);
     auto kp = cc->KeyGen();
     cc->EvalMultKeyGen(kp.secretKey);
 
@@ -48,10 +61,11 @@ int main(int argc, char* argv[]) try {
     cc->EvalRotateKeyGen(kp.secretKey, idx);
 
     dotprod::SaveContextAndKeys(keydir, cc, kp);
-    std::cout << "[keygen] ring=" << cc->GetRingDimension()
-              << " multDepth=" << dotprod::MULT_DEPTH
+    std::cout << "KEYDIR=" << keydir.string() << "\n";
+    std::cerr << "[keygen] ring=" << cc->GetRingDimension()
+              << " multDepth=" << depth
               << " rotations=" << idx.size() << " (n=" << n << ")"
-              << " -> " << keydir << "\n";
+              << " -> " << keydir.string() << "\n";
     return 0;
 } catch (const std::exception& e) {
     std::cerr << "[keygen] error: " << e.what() << "\n";

@@ -196,20 +196,28 @@ def fetch_fog_timing(retries: int = 5, delay: float = 1.0):
 
 def run_query(size: int, args, params: InstanceParams):
     io = ROOT / "io" / instance_name(size)
-    keydir, querydir = io / "keys", io / "query"   # keys + inputs shared across ops
-    result = io / f"{args.op}.result.ct"           # result differs per op
-    for d in (keydir, querydir):
-        d.mkdir(parents=True, exist_ok=True)
     env = lib_env()
 
     def run(name, *a, capture=False):
         return subprocess.run([str(BUILD / name), *map(str, a)],
                               check=not capture, capture_output=capture, text=True, env=env)
 
-    if not (keydir / "cc.bin").exists():
-        # Keys are per instance size, and the rotation keys are sized to N: each
-        # one is ~87 MB at ring 2^16 / depth 20 and ships on every Fog run.
-        run("dp_keygen", "--keydir", keydir, "--n", params.n)
+    # dp_keygen owns the directory name: keys and ciphertexts belong to the
+    # parameter set that produced them, so it puts them under a fingerprint of
+    # those parameters and prints the path. It reuses an existing set rather than
+    # regenerating, and a parameter change simply names a directory that doesn't
+    # exist yet. The rotation keys are sized to N.
+    kg = run("dp_keygen", "--keybase", io, "--n", params.n, capture=True)
+    if kg.returncode != 0:
+        print(kg.stdout + kg.stderr)
+        raise SystemExit("[harness] keygen failed")
+    print(kg.stderr.strip(), flush=True)
+    keydir = Path(next(l for l in kg.stdout.splitlines()
+                       if l.startswith("KEYDIR=")).split("=", 1)[1])
+    paramdir = keydir.parent                       # <io>/<fingerprint>/
+    querydir = paramdir / "query"                  # inputs are context-bound too
+    result = paramdir / f"{args.op}.result.ct"     # result differs per op
+    querydir.mkdir(parents=True, exist_ok=True)
 
     a_csv = ",".join(str(x) for x in params.vector_a())
     b_csv = ",".join(str(x) for x in params.vector_b())

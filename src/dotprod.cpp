@@ -17,9 +17,14 @@ namespace dotprod {
 
 namespace fs = std::filesystem;
 
-CryptoContext<DCRTPoly> BuildContext() {
+std::string ContextFingerprint(usint depth) {
+    return "r" + std::to_string(RING_DIM) + "_d" + std::to_string(depth) +
+           "_s" + std::to_string(SCALING_MOD_SIZE) + "_f" + std::to_string(FIRST_MOD_SIZE);
+}
+
+CryptoContext<DCRTPoly> BuildContext(usint depth) {
     CCParams<CryptoContextCKKSRNS> params;
-    params.SetMultiplicativeDepth(MULT_DEPTH);
+    params.SetMultiplicativeDepth(depth);
     params.SetScalingModSize(SCALING_MOD_SIZE);
     params.SetFirstModSize(FIRST_MOD_SIZE);
     params.SetSecurityLevel(HEStd_128_classic);

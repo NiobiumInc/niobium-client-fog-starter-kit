@@ -66,9 +66,16 @@ inline constexpr uint32_t ACT_REPEAT = 1;     // chained evals (one big eval > m
 inline constexpr double   ACT_LO     = 0.0;   // Chebyshev domain: must cover a_i in [1, MAX_N]
 inline constexpr double   ACT_HI     = 33.0;  // MAX_N=32 < 33
 
-// Build the CKKS CryptoContext used by every stage (identical params so keys,
-// ciphertexts, and the compiled program all line up).
-CryptoContext<DCRTPoly> BuildContext();
+// Build the CKKS CryptoContext at a given multiplicative depth. Keygen picks the
+// depth and serializes the context into cc.bin; every other stage loads it back,
+// so they cannot disagree about parameters.
+CryptoContext<DCRTPoly> BuildContext(usint depth = MULT_DEPTH);
+
+// Names the parameter set a key directory holds. Keys and ciphertexts are bound
+// to the context that produced them, so each parameter set gets its own
+// directory: changing a parameter generates a new set beside the old one instead
+// of colliding with it, and a stale set cannot be picked up by mistake.
+std::string ContextFingerprint(usint depth);
 
 // The shifts the rotate-and-sum reduction performs over N slots, and the only
 // rotations any op does. dp_keygen generates keys for exactly this set, and
