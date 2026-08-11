@@ -12,6 +12,7 @@ io/
 measurements/
 dotprod_compute_*/
 nbcc_fhetch_replay_source_*/
+fhetch_driver_source_*/
 *.ct
 *.fhetch
 fhetch_replay.json
@@ -33,3 +34,7 @@ __pycache__/
 # AI Files
 CLAUDE.md
 AGENTS.md
+
+# Agent skills installed into this checkout
+.claude/
+.agents/

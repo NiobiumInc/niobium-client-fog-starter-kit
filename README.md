@@ -6,10 +6,33 @@ The same pipeline also runs entirely on your CPU, so you can build the kit and v
 
 If FHE is new to you: fully homomorphic encryption lets a server compute directly on encrypted data. The server never needs the plaintext, and only the holder of the secret key can decrypt the result. The glossary in [FHE terms used in this kit](#fhe-terms-used-in-this-kit) covers the handful of terms the kit relies on.
 
+## Contents
+
+- [Niobium Client + Fog Starter Kit](#niobium-client--fog-starter-kit)
+  - [Contents](#contents)
+  - [What you need](#what-you-need)
+  - [Quickstart](#quickstart)
+    - [1. Get Fog access](#1-get-fog-access)
+    - [2. Clone and build](#2-clone-and-build)
+    - [3. Run it locally (verify on CPU)](#3-run-it-locally-verify-on-cpu)
+    - [4. Run it on the Fog](#4-run-it-on-the-fog)
+    - [5. Design and build your own application](#5-design-and-build-your-own-application)
+    - [6. Run your application on the Fog](#6-run-your-application-on-the-fog)
+  - [How it works](#how-it-works)
+  - [Try the other ops](#try-the-other-ops)
+  - [Performance](#performance)
+  - [Clean up](#clean-up)
+  - [What's in the repo](#whats-in-the-repo)
+  - [FHE terms used in this kit](#fhe-terms-used-in-this-kit)
+  - [Troubleshooting](#troubleshooting)
+  - [Get in touch](#get-in-touch)
+  - [License](#license)
+
 ## What you need
 
 - macOS (Apple Silicon or Intel) or Linux. On Windows, use WSL2.
 - git, a C++17 compiler, CMake 3.18+, Python 3, and OpenSSL.
+- A coding agent that reads the [FHE design skill](https://github.com/NiobiumInc/niobium-skills), like Claude Code or Codex, to start building applications of your own.
 
 macOS:
 
@@ -41,38 +64,46 @@ You don't need to wait to start: build the kit and run it locally (steps 2–3) 
 git clone https://github.com/NiobiumInc/niobium-client-fog-starter-kit.git
 cd niobium-client-fog-starter-kit
 
-scripts/setup.sh      # checks the toolchain, fetches the niobium-client submodule
-                      # and its OpenFHE source, creates a .venv, and finds OpenSSL
-                      # on macOS. No sudo, nothing global.
+scripts/setup.sh --build      # checks the toolchain, fetches the niobium-client submodule
+                              # and its OpenFHE source, creates a .venv, finds OpenSSL on
+                              # macOS, then runs the long first build. No sudo, nothing global.
 
-source .venv/bin/activate     # do this in every new shell; on macOS it also
-                              # exports OPENSSL_ROOT_DIR so the build gets TLS
-scripts/build_task.sh         # the long first build happens here
+source .venv/bin/activate     # do this in every new shell; puts `fog` on PATH, and on
+                              # macOS exports OPENSSL_ROOT_DIR so a rebuild gets TLS
 ```
 
-`scripts/setup.sh --build` runs the setup and the build as one command; the venv activation is still how later shells get `fog` on PATH.
+Alternatively, run the `--build` steps yourself:
+
+```bash
+scripts/setup.sh              # environment only, no compiling
+source .venv/bin/activate
+scripts/build_task.sh         # the long first build happens here, and after any source edit
+```
 
 **Note:** the first time the client configures, early in the long build, its log prints `fhetch_transport client: TLS enabled (OpenSSL 3.x)`. If you instead see a CMake warning that OpenSSL was not found, stop and fix that first (see [Troubleshooting](#troubleshooting)): the build will finish, but without TLS `fog submit` cannot reach the Fog in step 4.
 
 ### 3. Run it locally (verify on CPU)
 
-The first run of a program compiles it and checks the math on your CPU; no server is involved. The toy instance packs `a = [1,2,...,8]` and `b = [8,7,...,1]`, so the dot product is 120:
+`--cpu` computes with plain OpenFHE on your machine, so it needs no account and no device. The toy instance packs `a = [1,2,...,8]` and `b = [8,7,...,1]`, so the dot product is 120:
 
 ```bash
-python3 harness/run_submission.py 0 --op dot      # 0 selects the toy instance (N=8)
+python3 harness/run_submission.py toy --op dot --cpu   # toy = 8-element vectors
 ```
 
 ```
 [harness] === toy op=dot (N=8, local CPU verify) ===
 [harness] expected dot result (cleartext, slot 0) = 120.0
+[harness] computing on CPU...
 [harness] got=120.0 expected=120.0 rel_err=0.0 (tol=0.01) -> PASS
 ```
 
-To run it again locally, add `--reset`. Without it, a second run reminds you the program is already compiled and points you to the Fog to run it for real. [How it works](#how-it-works) explains the compile/run split.
+The first argument picks the instance: `toy` selects 8-element vectors, `small` selects 32-element ones. Every circuit runs at either size.
+
+`--sim` is the other local mode: it executes the compiled program through the bundled FHETCH simulator, which is the account-free rehearsal of a Fog run. [How it works](#how-it-works) explains the compile/run split.
 
 ### 4. Run it on the Fog
 
-Log in with your Fog account, then wrap the same command in `fog submit`. It provisions a job, waits for a worker, and re-runs the harness with the worker wired into the environment, so the program compiled in step 3 executes on the FPGA:
+A bare `run_submission.py` targets the Fog, which is the harness default. `fog submit` is what runs it there: it provisions a job, waits for a worker, and re-runs the harness with that worker wired into the environment, so the circuit executes on the FPGA:
 
 ```bash
 source .venv/bin/activate            # if this is a new shell; puts `fog` on PATH
@@ -80,25 +111,117 @@ source .venv/bin/activate            # if this is a new shell; puts `fog` on PAT
 fog login -u you@yourcompany.com     # console email; prompts for password
 fog list                             # confirms auth (an empty list is fine)
 
-fog submit python3 harness/run_submission.py 0 --op dot --target FOG --skip-build
+fog submit python3 harness/run_submission.py toy --op dot --target FOG --skip-build
 ```
 
 Pass `--target FOG` explicitly: `fog submit` reads the target from the command itself, and exits with `--target is required` without it.
 
-> **The first run is a cold start.** A `fog submit` of an `(op, N)` you haven't compiled yet compiles the program on your machine and *then* runs it on the FPGA in the same command, so it takes longer than later runs — those reuse the cached program and only execute. (Here `dot` was already compiled in step 3, so this submit skips straight to executing on the FPGA.)
+> **The first run is a cold start.** A `fog submit` of an `(op, N)` you haven't compiled yet compiles the program on your machine and *then* runs it on the FPGA in the same command, so it takes longer than later runs, which reuse the cached program and only execute.
 
 ```
 [fog] POST https://api.niobium.co/jobs/ {mode:batch, target:FOG}
 [fog] assigned <job-id> -> https://<lb>/<worker>/jobs/<job-id>/run
 [nbcc_fhetch_replay] POSTing <N> bytes (streamed, ... target=FOG) -> https://.../run
-[harness] got=120.00... expected=120.0 rel_err=... (tol=0.01) fog_wall=14075.0ms fpga=83.75ms -> PASS
+[harness] got=120.00... expected=120.0 rel_err=... (tol=0.01) fog_wall=9544.7ms fpga=4.35ms -> PASS
 ```
 
 The submit streams your keys and ciphertext to the worker before anything runs, so it is not instant; the wait depends on your connection. Let it finish rather than interrupting it, and watch progress with `fog list` from another shell. The full CLI reference is in [docs/FOG_CLI.md](docs/FOG_CLI.md).
 
+### 5. Design and build your own application
+
+Steps 2 through 4 ran a circuit that was already written. To build one of your own, install Niobium's [FHE application design skill](https://github.com/NiobiumInc/niobium-skills) into your coding agent. It carries an eleven-stage methodology: privacy model, feasibility, scheme and parameter selection, a plaintext twin validated against your own reference computation, then the encrypted program and its Fog deployment.
+
+For this step, we recommend allotting 30 - 60 minutes to build your first design using the Niobium AI skill.
+
+**a. Build the client so the skill can use it.** Run these from the kit directory:
+
+```bash
+source .venv/bin/activate     # if this is a new shell
+scripts/build_task.sh         # already built? this only installs the SDK for a separate app to find
+```
+
+**b. Make a folder for the application beside this one.**
+
+```bash
+mkdir -p ../my-fhe-app && cd ../my-fhe-app
+```
+
+**c. Install the skill into that folder.** The installer detects your agent and writes the skill where it reads it:
+
+```bash
+npx skills add NiobiumInc/niobium-skills --skill fhe-application-design
+```
+
+Straight from GitHub instead, no npx:
+
+```bash
+git clone --depth 1 https://github.com/NiobiumInc/niobium-skills /tmp/niobium-skills
+
+# Claude Code, Claude Desktop
+mkdir -p .claude/skills && cp -r /tmp/niobium-skills/skills/fhe-application-design .claude/skills/
+
+# Codex, Cursor, Copilot, Gemini, Windsurf, Cline
+mkdir -p .agents/skills && cp -r /tmp/niobium-skills/skills/fhe-application-design .agents/skills/
+```
+
+Check that it installed:
+
+```bash
+ls .claude/skills/fhe-application-design/SKILL.md   # Claude Code, Claude Desktop
+ls .agents/skills/fhe-application-design/SKILL.md   # Codex, Cursor, Copilot, Gemini, Windsurf, Cline
+```
+
+**d. Start your coding agent in that folder and ask it to build what you want.** Need an idea?
+
+- Score a patient's 30-day readmission risk on a cloud the hospital does not trust with the record.
+- Tell a utility which households can shed load during a peak event, from meter readings each household keeps encrypted.
+- Grade a part from line-sensor readings without the vendor's cloud learning the production volume.
+
+> **Note:** the skill wakes on the vocabulary of the problem: FHE, homomorphic encryption, encrypted computation, computing on encrypted data, OpenFHE, CKKS, the Niobium Fog. Naming it directly (`use the fhe-application-design skill`) works too, as does describing a computation the computing party must not be able to read.
+
+The skill asks one question up front, how much FHE you have worked with, and the rest when it reaches them. At Stage 0 it looks for a niobium-client installation, finds this kit's submodule when your application folder sits beside the kit, and asks whether to use it or pull the FHE-dev container image instead. At Stage 8 it asks whether to write the program in the Niobium DSL (alpha-stage, generates the OpenFHE for you) or in OpenFHE directly (mature, hand-written). For a machine-learning workload, Stage 3 asks where the labeled data and the plaintext model come from, and every later stage is measured against that reference.
+
+**e. Validate it on your own machine.** What gets created is a whole application: the keygen, encrypt, server, and decrypt programs, a `run_test.sh` that runs them end to end and reports how well the application does its job, a `run.sh` wrapper, a Makefile, and a README of its own. `run.sh` runs its command against whichever environment you chose at Stage 0, and takes `--container` or `--local` when a machine can do both:
+
+```bash
+./run.sh "./run_test.sh --cpu"   # plain OpenFHE on your CPU, compared against the twin
+./run.sh "./run_test.sh --sim"   # the local simulator over the generated trace
+```
+
+Your agent runs these as it iterates. A green `--cpu` run is the gate the methodology sets before the Fog run below.
+
+### 6. Run your application on the Fog
+
+A bare `run_test.sh` targets the Fog, and it is the harness default. Your API key from step 4 is already in `~/.fog`, so there is nothing new to log into:
+
+```bash
+cd path/to/niobium-client-fog-starter-kit
+source .venv/bin/activate     # puts `fog` on PATH
+cd ../my-fhe-app
+./run.sh "./run_test.sh"
+```
+
+The server step runs under `fog submit --target=FOG`, which provisions a job, streams your keys, ciphertext, and the generated trace to the assigned worker, computes there, and returns the encrypted result for the client side to decrypt and check. The key material moves before any compute starts, as in step 4, so the first submit takes longer than the local runs.
+
+The Fog runs exactly ring dimension 2^16 and the harness keeps that check on for every submission, so an application parameterized at a smaller ring runs under `--cpu` and `--sim` only.
+
+When you are done, `make clean` in the application folder removes the build tree and the per-run homes; the sources, data, and reports stay.
+
 ## How it works
 
-The Niobium model is compile once, run many. Compiling captures your OpenFHE computation as a portable `.fhetch` program (and computes a CPU reference so you can verify the math); it happens on your machine, once per `(op, N)`. Running executes the cached program on a device — `fog submit` makes that device the Fog's FPGA. A single `fog submit` does both when needed: if the program isn't cached yet it compiles first, then runs it on the FPGA (a cold start), so only the first run of each op pays the compile cost.
+*[Back to Run it locally](#3-run-it-locally-verify-on-cpu)*
+
+The Niobium model is compile once, run many. Compiling captures your OpenFHE computation as a portable `.fhetch` program; it happens on your machine, once per `(op, N)`. Running executes the cached program on a device, and `fog submit` makes that device the Fog's FPGA. A single `fog submit` does both when needed: if the program isn't cached yet it compiles first, then runs it on the FPGA (a cold start), so only the first run of each op pays the compile cost.
+
+Three run modes select who does the arithmetic:
+
+| mode | computes on | needs |
+|---|---|---|
+| (no flag) | the Fog's FPGA | a Niobium account, via `fog submit` |
+| `--sim` | the bundled FHETCH simulator | nothing |
+| `--cpu` | plain OpenFHE on your machine | nothing |
+
+`--cpu` is what checks the math against the cleartext answer before a circuit reaches the Fog. `--sim` executes the same compiled program the FPGA would, so it exercises the compile path as well as the result.
 
 The client and the Fog sit on opposite sides of a trust boundary:
 
@@ -128,14 +251,16 @@ The harness selects a circuit with `--op`. Each computes a scalar into slot 0 an
 | `activation` | Σ cos(aᵢ) | a degree-8192 Chebyshev polynomial on ciphertext, the deep-circuit workout |
 
 ```bash
-python3 harness/run_submission.py 0 --op add      # then mul_const, weighted, activation
+python3 harness/run_submission.py toy --op add --cpu   # then mul_const, weighted, activation
 ```
 
-Each op caches its own compiled program, so an op you haven't run yet needs no `--reset`. Instance size `1` runs the same ops at N=32, and every op runs on the Fog with the same `fog submit` wrapper as the Quickstart — the first submit of a new op is a cold start (it compiles, then runs), and later runs reuse the cached program.
+Each op caches its own compiled program. The `small` instance runs the same ops on 32-element vectors, and every op runs on the Fog through `fog submit` as in the Quickstart: the first submit of a new op is a cold start, and later runs reuse the cached program.
 
 From here, [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md) walks through editing the inputs, adding a new op end to end, and, once you've run the built-ins, dropping in your own workload. To build the client once and share it across several apps, see [docs/USING_THE_CLIENT.md](docs/USING_THE_CLIENT.md).
 
 ## Performance
+
+*[Back to Try the other ops](#try-the-other-ops)*
 
 A Fog run prints two worker-side timings:
 
@@ -145,7 +270,22 @@ A Fog run prints two worker-side timings:
 
 `fog_wall` is the worker's wall time for the job and `fpga` is the on-device execution time it measured; both are fetched after the run from the API's per-job timing and omitted when unavailable (a local run has neither). The client-side round-trip and upload size are recorded in the metrics JSON under `measurements/`, and `fog get <id>` shows the transfer breakdown for a job (`bytes_in`, `upload_seconds`).
 
-For the small ops, a job's end-to-end time is dominated by uploading keys and ciphertext, so it mostly reflects your connection. `activation` is the exception: its deep circuit makes the on-device number the one that moves. To move less data, lower `MULT_DEPTH` in [src/dotprod.h](src/dotprod.h) (the first four ops fit in 2): a shorter modulus chain means smaller keys and ciphertext. At the shipped depth the 128-bit security level already fixes `RING_DIM` at 65536, so it isn't a free knob — the CKKS parameters are worth experimenting with (see [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md)), validating any change end to end. Or run from a host with a faster uplink.
+For the small ops, a job's end-to-end time is split between the worker and uploading your keys and ciphertext, so it partly reflects your connection. `activation` is the exception: its deep circuit makes the on-device number the one that moves.
+
+How much a job uploads depends on which circuit you run, because the keys are built for the circuit that uses them. The simple `dot` workload, which multiplies two encrypted vectors and adds up the products, requires 27 MB of keys. The more complex `activation` circuit, which applies a smooth nonlinear function (a cosine, approximated by a degree-8192 polynomial) to every encrypted value before adding them up, requires 216 MB. The CKKS parameters live in [src/dotprod.h](src/dotprod.h) and are worth experimenting with (see [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md)), validating any change end to end. Or run from a host with a faster uplink.
+
+## Clean up
+
+Runs leave keys, encrypted inputs, compiled programs, and metrics on disk, and they add up: the `activation` circuit alone accounts for a few hundred MB.
+
+```bash
+scripts/clean.sh              # keys, inputs, compiled programs, metrics
+scripts/clean.sh --build      # those, plus the build tree
+scripts/clean.sh --all        # those, plus the venv, fetched sources, and the client's build
+scripts/clean.sh --dry-run    # list what would be removed, delete nothing
+```
+
+Everything it removes is untracked, and the next run regenerates what it needs.
 
 ## What's in the repo
 
@@ -153,7 +293,8 @@ For the small ops, a job's end-to-end time is dominated by uploading keys and ci
 niobium-client-fog-starter-kit/
 ├─ scripts/
 │   ├─ setup.sh             one-time environment setup (toolchain, submodule, .venv)
-│   └─ build_task.sh        builds the client SDK and the stage binaries
+│   ├─ build_task.sh        builds the client SDK and the stage binaries
+│   └─ clean.sh             removes run artifacts, the build tree, or both
 ├─ harness/
 │   ├─ run_submission.py    drives keygen -> encrypt -> compute -> decrypt -> verify
 │   └─ params.py            instance sizes, input vectors, and expected results
@@ -175,28 +316,32 @@ niobium-client-fog-starter-kit/
 
 ## FHE terms used in this kit
 
+*[Back to the top](#niobium-client--fog-starter-kit)*
+
 | Term | Meaning here |
 |---|---|
 | ciphertext | An encrypted value. One CKKS ciphertext holds a whole vector. The Fog only ever sees these. |
 | slot | One position in the packed vector inside a ciphertext. Inputs `a` and `b` are packed one value per slot. |
 | CKKS | The FHE scheme used here. Its arithmetic on real numbers is approximate, so results are checked against a small tolerance instead of exact equality. |
-| multiplicative depth | How many chained ciphertext-times-ciphertext multiplies the parameters allow, fixed at key generation (`MULT_DEPTH`). Set to 20 here for the `activation` op; the other ops use a level or two. |
+| multiplicative depth | How many chained ciphertext-times-ciphertext multiplies the parameters allow, fixed at key generation. Each op's keys are generated at the depth its own circuit needs: one level for the four small ops, fifteen for `activation`. |
 | rotation | A cyclic shift of a ciphertext's slots. Rotate-and-sum uses it to turn per-slot products into a single total in slot 0. |
 | evaluation keys | Public key material (`mk.bin`, `rk.bin`) that lets the server multiply and rotate ciphertext without being able to decrypt. The secret key never leaves your machine. |
 
 ## Troubleshooting
 
+*[Back to Clone and build](#2-clone-and-build)*
+
 | Symptom | Fix |
 |---|---|
 | `pip` fails with `externally-managed-environment` | Install into the kit's venv: run `scripts/setup.sh`, then `source .venv/bin/activate`. |
 | macOS build fails at `find_package(OpenSSL)`, or no "TLS enabled" line | `brew install openssl@3`, re-run `scripts/setup.sh`, activate the venv, rebuild. |
-| A second local run shows a "run it on the Fog" message instead of a result | Expected — the program is already compiled. `--reset` re-verifies locally, or `fog submit` runs it on the Fog. |
+| A run prints "the default mode runs on the Fog, and no worker is wired in here" | The bare command targets the Fog. Run it under `fog submit`, or use `--cpu` or `--sim` to stay local. |
 | `fog login` can't reach the API, or TLS errors | Make sure the venv is active so the CLI finds `certifi`, and that `~/.fog/config`, if you have one, doesn't point `api_url` away from `https://api.niobium.co`. |
 | `fog submit` exits with `--target is required` | Pass `--target FOG` inside the submitted command itself. |
 | `fog submit` returns HTTP 401 | Token missing or expired; run `fog login` again. |
 | `fog submit` returns HTTP 403 | Your account isn't provisioned for that target; contact Niobium. |
 | `fog submit` seems to hang | It is uploading keys and ciphertext. `fog list` in another shell shows the job state. |
-| Decrypt fails with "approximation error is too high" | The circuit needs more depth than `MULT_DEPTH` allows. Raise it in [src/dotprod.h](src/dotprod.h), rebuild, re-run with `--reset`. |
+| Decrypt fails with "approximation error is too high" | The circuit needs more multiplicative depth than its keys were generated for. For an op you edited, refresh its depth (see [docs/EXPERIMENTING.md](docs/EXPERIMENTING.md#depth-and-key-size)). |
 | Backend fatal error during compile (address space / allocation) | The compile ran without `-O3`. Keep the harness's default opt level. |
 
 Several of these trace back to environment requirements the kit normally configures for you; those are covered in [docs/NIOBIUM_CLIENT_TRANSPORT.md](docs/NIOBIUM_CLIENT_TRANSPORT.md#what-the-kit-configures-for-you).

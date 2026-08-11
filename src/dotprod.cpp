@@ -17,12 +17,18 @@ namespace dotprod {
 
 namespace fs = std::filesystem;
 
-CryptoContext<DCRTPoly> BuildContext() {
+std::string ContextFingerprint(usint depth) {
+    return "r" + std::to_string(RING_DIM) + "_d" + std::to_string(depth) +
+           "_s" + std::to_string(SCALING_MOD_SIZE) + "_f" + std::to_string(FIRST_MOD_SIZE);
+}
+
+CryptoContext<DCRTPoly> BuildContext(usint depth) {
     CCParams<CryptoContextCKKSRNS> params;
-    params.SetMultiplicativeDepth(MULT_DEPTH);
+    params.SetMultiplicativeDepth(depth);
     params.SetScalingModSize(SCALING_MOD_SIZE);
     params.SetFirstModSize(FIRST_MOD_SIZE);
     params.SetSecurityLevel(HEStd_128_classic);
+    params.SetNumLargeDigits(KEY_SWITCH_DIGITS);
     // Pin the ring dimension (see dotprod.h). At MULT_DEPTH=20 the 128-bit
     // security check needs a ring this large (20 is the safe max here).
     params.SetRingDim(RING_DIM);
@@ -33,6 +39,51 @@ CryptoContext<DCRTPoly> BuildContext() {
     cc->Enable(LEVELEDSHE);
     cc->Enable(ADVANCEDSHE);   // EvalChebyshevFunction (ACTIVATION op) needs ADVANCEDSHE
     return cc;
+}
+
+usint DeclaredDepth(Op op) {
+    switch (op) {
+        case Op::ADD:        return 1;
+        case Op::MUL_CONST:  return 1;
+        case Op::DOT:        return 1;
+        case Op::WEIGHTED:   return 1;
+        case Op::ACTIVATION: return 15;
+    }
+    return 0;
+}
+
+usint RequiredDepth(Op op, int n) {
+    if (usint declared = DeclaredDepth(op)) return declared;
+    return MeasureDepth(op, n);
+}
+
+usint MeasureDepth(Op op, int n) {
+    // A counting context, not a protecting one: ring 2^10 so the probe is ~64x
+    // cheaper than the real thing, no security level because nothing here is
+    // secret, and MULT_DEPTH as the ceiling to measure against. The dummy inputs
+    // are constants and the keys are discarded when this returns.
+    CCParams<CryptoContextCKKSRNS> params;
+    params.SetMultiplicativeDepth(MULT_DEPTH);
+    params.SetScalingModSize(SCALING_MOD_SIZE);
+    params.SetFirstModSize(FIRST_MOD_SIZE);
+    params.SetSecurityLevel(HEStd_NotSet);
+    params.SetRingDim(1 << 10);
+
+    auto cc = GenCryptoContext(params);
+    cc->Enable(PKE); cc->Enable(KEYSWITCH); cc->Enable(LEVELEDSHE); cc->Enable(ADVANCEDSHE);
+
+    auto kp = cc->KeyGen();
+    cc->EvalMultKeyGen(kp.secretKey);
+    cc->EvalRotateKeyGen(kp.secretKey, RotationIndices(n));
+
+    const std::vector<double> dummy(n, 1.0);
+    auto pt = cc->MakeCKKSPackedPlaintext(dummy);
+    auto a  = cc->Encrypt(kp.publicKey, pt);
+    auto b  = cc->Encrypt(kp.publicKey, pt);
+
+    auto r = Kernel(cc, a, b, n, op, 1.0, 0.0);
+    const usint used = static_cast<usint>(r->GetLevel());   // rescales performed
+    return used > 0 ? used : 1;                             // OpenFHE wants at least one
 }
 
 void SaveContextAndKeys(const fs::path& keydir,
@@ -55,18 +106,23 @@ void SaveContextAndKeys(const fs::path& keydir,
         throw std::runtime_error("failed to write rk.bin");
 }
 
-CryptoContext<DCRTPoly> LoadContextWithEvalKeys(const fs::path& keydir) {
+CryptoContext<DCRTPoly> LoadContext(const fs::path& keydir,
+                                    bool withRelinKey, bool withRotationKeys) {
     CryptoContext<DCRTPoly> cc;
     if (!Serial::DeserializeFromFile((keydir / "cc.bin").string(), cc, SerType::BINARY))
         throw std::runtime_error("cannot load cc.bin from " + keydir.string());
 
-    std::ifstream mkfs((keydir / "mk.bin").string(), std::ios::binary);
-    if (!mkfs.good() || !cc->DeserializeEvalMultKey(mkfs, SerType::BINARY))
-        throw std::runtime_error("cannot load mk.bin");
+    if (withRelinKey) {
+        std::ifstream mkfs((keydir / "mk.bin").string(), std::ios::binary);
+        if (!mkfs.good() || !cc->DeserializeEvalMultKey(mkfs, SerType::BINARY))
+            throw std::runtime_error("cannot load mk.bin");
+    }
 
-    std::ifstream rkfs((keydir / "rk.bin").string(), std::ios::binary);
-    if (!rkfs.good() || !cc->DeserializeEvalAutomorphismKey(rkfs, SerType::BINARY))
-        throw std::runtime_error("cannot load rk.bin");
+    if (withRotationKeys) {
+        std::ifstream rkfs((keydir / "rk.bin").string(), std::ios::binary);
+        if (!rkfs.good() || !cc->DeserializeEvalAutomorphismKey(rkfs, SerType::BINARY))
+            throw std::runtime_error("cannot load rk.bin");
+    }
     return cc;
 }
 
@@ -122,9 +178,38 @@ const char* OpName(Op op) {
     return "?";
 }
 
+std::vector<int32_t> RotationIndices(int n) {
+    std::vector<int32_t> idx;
+    for (int32_t r = 1; r < n; r <<= 1)         // the rotate-and-sum shifts
+        idx.push_back(r);
+    return idx;
+}
+
+bool UsesVectorB(Op op) {
+    switch (op) {
+        case Op::ADD:                           // EvalAdd(a, b)
+        case Op::DOT:                           // EvalMult(a, b)
+        case Op::WEIGHTED:   return true;       // EvalMult(a, b) + bias
+        case Op::MUL_CONST:                     // EvalMult(a, plaintext k)
+        case Op::ACTIVATION: return false;      // Chebyshev over a alone
+    }
+    return true;                                // unknown op: assume it reads both
+}
+
+bool NeedsRelinKey(Op op) {
+    switch (op) {
+        case Op::ADD:                           // EvalAdd(ct, ct)
+        case Op::MUL_CONST:  return false;      // EvalMult(ct, plaintext scalar)
+        case Op::DOT:                           // EvalMult(ct, ct)
+        case Op::WEIGHTED:                      // EvalMult(ct, ct) + bias
+        case Op::ACTIVATION: return true;       // Chebyshev: many EvalMult(ct, ct)
+    }
+    return true;                                // unknown op: assume it multiplies
+}
+
 static Ciphertext<DCRTPoly> ReduceSum(const CryptoContext<DCRTPoly>& cc,
                                       Ciphertext<DCRTPoly> acc, int n) {
-    for (int r = 1; r < n; r <<= 1)             // rotate-and-sum into slot 0
+    for (int32_t r : RotationIndices(n))        // rotate-and-sum into slot 0
         acc = cc->EvalAdd(acc, cc->EvalRotate(acc, r));
     return acc;
 }

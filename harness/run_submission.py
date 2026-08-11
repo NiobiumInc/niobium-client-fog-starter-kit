@@ -5,16 +5,26 @@
 run_submission.py — drive the encrypted dot-product workload end to end.
 
 Single pass: (build) -> keygen -> encrypt -> compute -> decrypt -> verify.
-Compile once, run many: dp_compute_sdk records the program on a cache miss, then
-runs it on the device whenever one is wired in (NBCC_FHETCH_SERVER, set by
-`fog submit`). So a single `fog submit` compiles (if needed) and runs on the Fog
-in one invocation — the first run is a cold start (record + run), later runs only
-replay. A plain local run (no server) stops after the record with the CPU result.
-This script never starts a server. See docs/NIOBIUM_CLIENT_TRANSPORT.md.
 
-    python3 harness/run_submission.py 0 --target FOG            # local: compile + CPU-verify
+Three run modes, all the same pipeline; the mode says who does the arithmetic:
+
+    (no flag)  the Fog. dp_compute_sdk records the program hollow (structure and
+               probes, no polynomial math) and the FPGA computes it. Needs a
+               worker, which `fog submit` wires in via NBCC_FHETCH_SERVER.
+    --sim      the same hollow record, executed by the bundled FHETCH simulator.
+               No account, no device.
+    --cpu      real OpenFHE math on this machine, which is what verifies the
+               circuit before it ever reaches the Fog.
+
+Compile once, run many: the first run of an (op, N) records the program, later
+runs of the same (op, N) execute the cached one, so a single `fog submit` covers
+both (a cold start records, then runs). This script never starts a server.
+See docs/NIOBIUM_CLIENT_TRANSPORT.md.
+
+    python3 harness/run_submission.py 0 --cpu                   # verify on CPU
+    python3 harness/run_submission.py 0 --sim                   # local simulator
     niobium-client/scripts/fog submit \\
-        python3 harness/run_submission.py 0 --target FOG --skip-build   # compile + run on the Fog
+        python3 harness/run_submission.py 0 --target FOG --skip-build   # on the Fog
 """
 import argparse
 import json
@@ -37,10 +47,25 @@ BUILD = ROOT / "build"                              # scripts/build_task.sh outp
 CLIENT = Path(os.environ.get("NIOBIUM_CLIENT_DIR", ROOT / "niobium-client"))
 
 
+def instance_arg(value: str) -> int:
+    """Resolve the instance argument to its index.
+
+    The run prints the instance by name and writes its artifacts under that name,
+    so the command line takes the same name. The indices stay valid.
+    """
+    by_name = {instance_name(s): s for s in range(TOY, SMALL + 1)}
+    if value in by_name:
+        return by_name[value]
+    if value.isdigit() and TOY <= int(value) <= SMALL:
+        return int(value)
+    raise argparse.ArgumentTypeError(
+        f"unknown instance '{value}' (choose from {', '.join(by_name)})")
+
+
 def compute_binary() -> str:
-    """The only compute stage — dp_compute_sdk. On the first run it compiles +
-    writes the CPU result (local math verify, no server); on later runs it runs
-    the compiled program over the transport (the Fog)."""
+    """The only compute stage — dp_compute_sdk. It records the program on a cache
+    miss and, in --sim / the Fog mode, executes it through the simulator or the
+    worker; --cpu computes with real OpenFHE math here."""
     return "dp_compute_sdk"
 
 
@@ -49,7 +74,8 @@ def lib_env() -> dict:
     libnbfhetch. If a transport server is set (NBCC_FHETCH_SERVER — e.g. by
     `fog submit`), point NBCC_FHETCH_REPLAY at the client forwarder so replay()
     ships over HTTP. We NEVER set NBCC_FHETCH_SERVER/TOKEN ourselves — those flow
-    in from `fog submit`."""
+    in from `fog submit`. For --sim, point NBCC_FHETCH_SIM at the simulator the
+    client build produced, so the run doesn't depend on one being on PATH."""
     env = os.environ.copy()
     libs = [ROOT / "third_party" / "openfhe" / "lib",         # CPU build
             CLIENT / "vendor" / "lib" / "openfhe" / "lib"]     # transport build
@@ -64,7 +90,40 @@ def lib_env() -> dict:
         fwd = CLIENT / "build" / "src" / "fhetch_transport" / "nbcc_fhetch_replay"
         if fwd.exists():
             env["NBCC_FHETCH_REPLAY"] = str(fwd)
+    if not env.get("NBCC_FHETCH_SIM"):
+        for sim in (CLIENT / "build" / "vendor" / "niobium-fhetch" / "fhetch_sim",
+                    CLIENT / "vendor" / "niobium-fhetch" / "build" / "fhetch_sim"):
+            if sim.exists():
+                env["NBCC_FHETCH_SIM"] = str(sim)
+                break
     return env
+
+
+STAGES = ("dp_keygen", "dp_encrypt", "dp_decrypt", "dp_compute_sdk")
+
+
+def rebuild_stages() -> None:
+    """Bring build/ up to date with src/ before running anything.
+
+    An edit to the circuit (src/dotprod.cpp, src/dotprod.h) has to reach the
+    binaries, and checking only whether build/ exists would run the previous
+    kernel and report a confident PASS for code you just replaced. CMake decides
+    what actually recompiles, so this costs a moment when nothing changed. With
+    no build tree yet, fall back to the full scripts/build_task.sh, which also
+    fetches and builds the client.
+    """
+    if not (BUILD / "CMakeCache.txt").exists():
+        print("[harness] building (scripts/build_task.sh) ...")
+        subprocess.run(["bash", str(ROOT / "scripts" / "build_task.sh")], check=True)
+        return
+    cp = subprocess.run(["cmake", "--build", str(BUILD), "-j", "--target", *STAGES],
+                        capture_output=True, text=True)
+    if cp.returncode != 0:
+        print(cp.stdout + cp.stderr)
+        raise SystemExit("[harness] build failed — fix the error above, then re-run.")
+    if any(w in cp.stdout for w in ("Building", "Linking")):
+        print("[harness] rebuilt the stages from src/; the compiled program "
+              "recompiles on this run to match")
 
 
 def parse_output(text: str) -> dict:
@@ -152,18 +211,28 @@ def fetch_fog_timing(retries: int = 5, delay: float = 1.0):
 
 def run_query(size: int, args, params: InstanceParams):
     io = ROOT / "io" / instance_name(size)
-    keydir, querydir = io / "keys", io / "query"   # keys + inputs shared across ops
-    result = io / f"{args.op}.result.ct"           # result differs per op
-    for d in (keydir, querydir):
-        d.mkdir(parents=True, exist_ok=True)
     env = lib_env()
 
     def run(name, *a, capture=False):
         return subprocess.run([str(BUILD / name), *map(str, a)],
                               check=not capture, capture_output=capture, text=True, env=env)
 
-    if not (keydir / "cc.bin").exists():
-        run("dp_keygen", "--keydir", keydir)
+    # dp_keygen owns the directory name: keys and ciphertexts belong to the
+    # parameter set that produced them, so it puts them under a fingerprint of
+    # those parameters and prints the path. It reuses an existing set rather than
+    # regenerating, and a parameter change simply names a directory that doesn't
+    # exist yet. The rotation keys are sized to N.
+    kg = run("dp_keygen", "--keybase", io, "--op", args.op, "--n", params.n, capture=True)
+    if kg.returncode != 0:
+        print(kg.stdout + kg.stderr)
+        raise SystemExit("[harness] keygen failed")
+    print(kg.stderr.strip(), flush=True)
+    keydir = Path(next(l for l in kg.stdout.splitlines()
+                       if l.startswith("KEYDIR=")).split("=", 1)[1])
+    paramdir = keydir.parent                       # <io>/<fingerprint>/
+    querydir = paramdir / "query"                  # inputs are context-bound too
+    result = paramdir / f"{args.op}.result.ct"     # result differs per op
+    querydir.mkdir(parents=True, exist_ok=True)
 
     a_csv = ",".join(str(x) for x in params.vector_a())
     b_csv = ",".join(str(x) for x in params.vector_b())
@@ -182,13 +251,22 @@ def run_query(size: int, args, params: InstanceParams):
         # MUST be "--opt-level O3", not "-O3": the SDK's init() reads --opt-level
         # (and forwards the right compile settings to the backend); a bare -O3 is
         # ignored at this layer.
-        compute_args += [f"--target={args.target}", "--opt-level", f"O{args.optimization}"]
+        # The target is what replay() dispatches on: the Fog for a Fog run, and
+        # "local" (the SDK default) for the simulator. Recording is unaffected by
+        # it, so all three modes share one cached program.
+        target = args.target if args.mode == "fog" else "local"
+        compute_args += ["--mode", args.mode, f"--target={target}",
+                         "--opt-level", f"O{args.optimization}"]
     # The compute stage runs with its output captured (silent) and, on the Fog, is
     # the slow step (upload + FPGA) — announce it so the prior `[encrypt]` line
     # doesn't look like what's hanging.
-    if os.environ.get("NBCC_FHETCH_SERVER"):
+    if args.mode == "fog" and os.environ.get("NBCC_FHETCH_SERVER"):
         print("[harness] computing on the Fog — streaming keys + ciphertext to the worker, then "
               "running on the FPGA (the slow part; `fog list` shows progress)...", flush=True)
+    elif args.mode == "fog":
+        pass                       # no worker: the stage preflight says so, below
+    elif args.mode == "sim":
+        print("[harness] computing in the local FHETCH simulator...", flush=True)
     else:
         print("[harness] computing on CPU...", flush=True)
     cp = run(cbin, *compute_args, capture=True)
@@ -220,28 +298,38 @@ def main() -> int:
     # or piped (a Fog submit, a log file) rather than a terminal.
     sys.stdout.reconfigure(line_buffering=True)
     p = argparse.ArgumentParser(description="Run the encrypted dot-product workload.")
-    p.add_argument("size", type=int, choices=range(TOY, SMALL + 1),
-                   help="Instance size (0=toy N=8, 1=small N=32).")
+    p.add_argument("size", type=instance_arg, metavar="{toy,small}",
+                   help="Which instance to run: toy (8-element vectors) or small "
+                        "(32-element). The indices 0 and 1 also work.")
     p.add_argument("--op", choices=OPS, default="dot",
                    help="Which tiny circuit to run (default dot). Each leaves a "
                         "scalar in slot 0; see docs/NIOBIUM_CLIENT_TRANSPORT.md.")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--cpu", dest="mode", action="store_const", const="cpu",
+                      help="Compute with real OpenFHE math on this machine (verifies the "
+                           "circuit; no account, no device).")
+    mode.add_argument("--sim", dest="mode", action="store_const", const="sim",
+                      help="Execute the compiled program in the local FHETCH simulator "
+                           "(the account-free rehearsal of a Fog run).")
+    p.set_defaults(mode="fog")
     p.add_argument("--target", default="FOG",
-                   help="Where the compiled program runs (default FOG).")
+                   help="Fog target for the default mode (default FOG; FUNC_SIM is the "
+                        "hardware-free functional simulator). Ignored by --cpu and --sim.")
     p.add_argument("-O", "--optimization", type=int, choices=[0, 1, 2, 3], default=3,
                    help="Compile opt level (default 3 — required for the FPGA target; leave it).")
     p.add_argument("--tol", type=float, default=1e-2,
                    help="PASS window: relative error of the decrypted dot-product (default 1e-2).")
     p.add_argument("--skip-build", action="store_true",
-                   help="Skip scripts/build_task.sh (assume build/ is present).")
+                   help="Don't rebuild the stages first (assume build/ is current). "
+                        "`fog submit` passes this, since the build already happened.")
     p.add_argument("--reset", action="store_true",
                    help="Clear this size's keys/inputs and the cached compiled program(s) so "
                         "the workload re-compiles from scratch. Use after editing the circuit "
                         "(src/) or the inputs (params.py).")
     args = p.parse_args()
 
-    if not args.skip_build and not (BUILD / "dp_compute_sdk").exists():
-        print("[harness] building (scripts/build_task.sh) ...")
-        subprocess.run(["bash", str(ROOT / "scripts" / "build_task.sh")], check=True)
+    if not args.skip_build:
+        rebuild_stages()
 
     params = InstanceParams(args.size)
 
@@ -258,27 +346,27 @@ def main() -> int:
         print(f"[harness] --reset: cleared io/{params.name} + {len(prog_dirs)} cached program(s)")
 
     expected = params.expected(args.op)
-    # Show where the run actually happens, not the compile target: a plain local
-    # run verifies on CPU (no NBCC_FHETCH_SERVER), a `fog submit` runs on the FPGA.
-    on_fog = os.environ.get("NBCC_FHETCH_SERVER") is not None
-    where = "Fog FPGA" if on_fog else "local CPU verify"
+    # Name where the arithmetic happens, which is what the mode selects.
+    where = {"fog": "Fog FPGA", "sim": "local simulator",
+             "cpu": "local CPU verify"}[args.mode]
     print(f"\n[harness] === {params.name} op={args.op} (N={params.n}, {where}) ===")
     print(f"[harness] expected {args.op} result (cleartext, slot 0) = {expected}")
 
     metrics, log = run_query(args.size, args, params)
 
     if metrics.get("needs_device"):
-        # Local re-run of an already-compiled (op, N): the compiled program runs on
-        # a device, and none is wired in here. Show a Fog call-to-action, not a FAIL.
+        # The default mode targets the Fog and no worker is wired in: this run was
+        # started outside `fog submit`. Show how to submit it, not a FAIL.
         md = ROOT / "measurements" / params.name
         md.mkdir(parents=True, exist_ok=True)
         (md / f"{args.op}.log").write_text(log)
-        print(f"\n[harness] '{args.op}' is already compiled and verified locally.")
-        print("[harness] To actually run it, submit it to the Fog:")
-        print(f"[harness]     fog submit python3 harness/run_submission.py {args.size} "
+        print(f"\n[harness] the default mode runs '{args.op}' on the Fog, and no worker is "
+              "wired in here.")
+        print("[harness] Submit it:")
+        print(f"[harness]     fog submit python3 harness/run_submission.py {params.name} "
               f"--op {args.op} --target FOG --skip-build")
         print("[harness] Get Fog access -> https://console.niobium.co/request-account")
-        print("[harness] (or re-verify locally with --reset)")
+        print(f"[harness] Or run it locally: --cpu (real math here) or --sim (the simulator)")
         return 0
 
     timing = fetch_fog_timing()        # best-effort; {} when not on the Fog
@@ -290,7 +378,8 @@ def main() -> int:
     ok = rel is not None and rel <= args.tol
     verdict = "PASS" if ok else "FAIL"
 
-    metrics.update(size=params.name, n=params.n, op=args.op, target=args.target,
+    metrics.update(size=params.name, n=params.n, op=args.op, mode=args.mode,
+                   target=args.target if args.mode == "fog" else "local",
                    expected=expected, rel_err=rel, verdict=verdict, passed=ok)
     md = ROOT / "measurements" / params.name
     md.mkdir(parents=True, exist_ok=True)

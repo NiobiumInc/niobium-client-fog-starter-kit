@@ -30,7 +30,8 @@ int main(int argc, char* argv[]) try {
         return 1;
     }
 
-    auto cc = dotprod::LoadContextWithEvalKeys(keydir);
+    // decrypt uses sk only, so it loads no evaluation keys (348 MB unread).
+    auto cc = dotprod::LoadContext(keydir);
     auto sk = dotprod::LoadSecretKey(keydir, cc);
 
     Ciphertext<DCRTPoly> result;

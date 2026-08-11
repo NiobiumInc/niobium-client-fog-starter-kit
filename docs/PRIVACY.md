@@ -35,11 +35,11 @@ CKKS, the FHE scheme used here, has three kinds of key material:
 | the **decrypted result** | **ciphertext** inputs `a.ct`, `b.ct` |
 | | the **compiled program** (`.fhetch`) |
 
-After a run, the client's key material, `sk.bin` included, sits in `io/<instance>/keys/` (`toy` or `small`), with the encrypted inputs and the result beside it in the same instance directory. The uploaded payload holds everything sent, and `sk.bin` is not in it.
+After a run, the client's key material, `sk.bin` included, sits in `io/<instance>/<parameters>/keys/`, with the encrypted inputs and the result beside it. The uploaded payload holds everything sent, and `sk.bin` is not in it.
 
 ## Check it yourself
 
-1. **The server stage never opens the secret key.** [`../src/dp_compute_sdk.cpp`](../src/dp_compute_sdk.cpp) calls `LoadContextWithEvalKeys()` (crypto context + `mk.bin` + `rk.bin`) and loads `a.ct` / `b.ct`. It never reads `sk.bin`:
+1. **The server stage never opens the secret key.** [`../src/dp_compute_sdk.cpp`](../src/dp_compute_sdk.cpp) calls `LoadContext()`, which reads the crypto context plus the evaluation keys its circuit uses, and loads the inputs that circuit reads. It never reads `sk.bin`:
    ```bash
    grep -n "sk.bin\|LoadSecretKey" src/dp_compute_sdk.cpp    # -> no matches
    grep -rn "LoadSecretKey" src/    # -> the shared helper (dotprod.h/.cpp) and its one caller: dp_decrypt.cpp
