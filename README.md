@@ -69,6 +69,8 @@ python3 harness/run_submission.py 0 --op dot --cpu   # 0 selects the toy instanc
 [harness] got=120.0 expected=120.0 rel_err=0.0 (tol=0.01) -> PASS
 ```
 
+The first argument picks the instance: `0` selects 8-element vectors, `1` selects 32-element ones. Every circuit runs at either size.
+
 `--sim` is the other local mode: it executes the compiled program through the bundled FHETCH simulator, which is the account-free rehearsal of a Fog run. [How it works](#how-it-works) explains the compile/run split.
 
 ### 4. Run it on the Fog
