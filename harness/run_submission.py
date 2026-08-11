@@ -207,7 +207,7 @@ def run_query(size: int, args, params: InstanceParams):
     # those parameters and prints the path. It reuses an existing set rather than
     # regenerating, and a parameter change simply names a directory that doesn't
     # exist yet. The rotation keys are sized to N.
-    kg = run("dp_keygen", "--keybase", io, "--n", params.n, capture=True)
+    kg = run("dp_keygen", "--keybase", io, "--op", args.op, "--n", params.n, capture=True)
     if kg.returncode != 0:
         print(kg.stdout + kg.stderr)
         raise SystemExit("[harness] keygen failed")

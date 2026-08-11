@@ -76,7 +76,6 @@ CryptoContext<DCRTPoly> BuildContext(usint depth = MULT_DEPTH);
 // directory: changing a parameter generates a new set beside the old one instead
 // of colliding with it, and a stale set cannot be picked up by mistake.
 std::string ContextFingerprint(usint depth);
-
 // The shifts the rotate-and-sum reduction performs over N slots, and the only
 // rotations any op does. dp_keygen generates keys for exactly this set, and
 // ReduceSum() walks the same list, so key material and circuit cannot drift.
@@ -138,6 +137,26 @@ const char* OpName(Op op);
 // `mul_const` multiplies by a plaintext scalar, so neither needs one, and the
 // server stage does not load it for them.
 bool NeedsRelinKey(Op op);
+
+// Depth each shipped op needs, recorded from a measurement so a run of a known
+// example does not pay to rediscover it. Returns 0 for an op that isn't listed,
+// which is the signal to measure. Editing one of these kernels means the
+// recorded value is a claim about code that changed: re-measure with
+// `dp_keygen --print-depth --op <op> --n <N>` and update the entry.
+usint DeclaredDepth(Op op);
+
+// The depth to build a context at: the declared value when there is one, the
+// measured value when there isn't. A new op therefore works without touching a
+// depth constant, and the five shipped ones cost nothing to look up.
+usint RequiredDepth(Op op, int n);
+
+// Levels this op's circuit consumes, measured rather than declared: the kernel
+// runs on dummy data in a throwaway context and reports the level of its result.
+// An FHE circuit cannot branch on values, so level use is a property of the code
+// and its compile-time constants, and a count taken at a toy ring is exactly the
+// count at RING_DIM. Editing a kernel or a constant changes what this returns,
+// with no depth constant to keep in sync by hand.
+usint MeasureDepth(Op op, int n);
 
 // Run the selected circuit. k is used only by MUL_CONST, bias only by WEIGHTED.
 // Pure OpenFHE — the SDK's probes fire on these calls when the TU is built

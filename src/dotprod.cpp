@@ -40,6 +40,53 @@ CryptoContext<DCRTPoly> BuildContext(usint depth) {
     return cc;
 }
 
+usint DeclaredDepth(Op op) {
+    switch (op) {
+        case Op::ADD:        return 1;
+        case Op::MUL_CONST:  return 1;
+        case Op::DOT:        return 1;
+        case Op::WEIGHTED:   return 1;
+        case Op::ACTIVATION: return 15;
+    }
+    return 0;
+}
+
+usint RequiredDepth(Op op, int n) {
+    if (usint declared = DeclaredDepth(op)) return declared;
+    return MeasureDepth(op, n);
+}
+
+usint MeasureDepth(Op op, int n) {
+    // A counting context, not a protecting one: ring 2^10 so the probe is ~64x
+    // cheaper than the real thing, no security level because nothing here is
+    // secret, and MULT_DEPTH as the ceiling to measure against. The dummy inputs
+    // are constants and the keys are discarded when this returns.
+    CCParams<CryptoContextCKKSRNS> params;
+    params.SetMultiplicativeDepth(MULT_DEPTH);
+    params.SetScalingModSize(SCALING_MOD_SIZE);
+    params.SetFirstModSize(FIRST_MOD_SIZE);
+    params.SetSecurityLevel(HEStd_NotSet);
+    params.SetRingDim(1 << 10);
+
+    auto cc = GenCryptoContext(params);
+    cc->Enable(PKE); cc->Enable(KEYSWITCH); cc->Enable(LEVELEDSHE); cc->Enable(ADVANCEDSHE);
+
+    auto kp = cc->KeyGen();
+    cc->EvalMultKeyGen(kp.secretKey);
+    cc->EvalRotateKeyGen(kp.secretKey, RotationIndices(n));
+
+    const std::vector<double> dummy(n, 1.0);
+    auto pt = cc->MakeCKKSPackedPlaintext(dummy);
+    auto a  = cc->Encrypt(kp.publicKey, pt);
+    auto b  = cc->Encrypt(kp.publicKey, pt);
+
+    auto r = Kernel(cc, a, b, n, op, 1.0, 0.0);
+    // GetLevel() counts the rescales the circuit performed. A result still
+    // carrying a squared scale needs one more level to rescale into, so add it.
+    usint used = static_cast<usint>(r->GetLevel()) + (r->GetNoiseScaleDeg() > 1 ? 1 : 0);
+    return used > 0 ? used : 1;                    // OpenFHE wants at least one
+}
+
 void SaveContextAndKeys(const fs::path& keydir,
                         const CryptoContext<DCRTPoly>& cc,
                         const KeyPair<DCRTPoly>& kp) {

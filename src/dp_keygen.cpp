@@ -18,15 +18,26 @@
 #include <vector>
 
 int main(int argc, char* argv[]) try {
-    std::string keybase;
+    std::string keybase, opStr = "dot";
     int n = 0;
+    bool printDepth = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--keybase" && i + 1 < argc) keybase = argv[++i];
         else if (a == "--n" && i + 1 < argc) n = std::stoi(argv[++i]);
+        else if (a == "--op" && i + 1 < argc) opStr = argv[++i];
+        else if (a == "--print-depth") printDepth = true;
         else if (a == "--help" || a == "-h") {
-            std::cerr << "Usage: " << argv[0] << " --keybase <dir> --n <N>\n"; return 0;
+            std::cerr << "Usage: " << argv[0] << " --keybase <dir> --op <op> --n <N>\n"
+                      << "       " << argv[0] << " --print-depth --op <op> --n <N>\n"; return 0;
         } else { std::cerr << "Unknown arg: " << a << "\n"; return 1; }
+    }
+
+    // Measure and report, for filling in DeclaredDepth() after a kernel changes.
+    if (printDepth) {
+        if (n <= 0) { std::cerr << "--print-depth needs --n <N>\n"; return 1; }
+        std::cout << dotprod::MeasureDepth(dotprod::ParseOp(opStr), n) << "\n";
+        return 0;
     }
     if (keybase.empty() || n <= 0) {
         std::cerr << "Usage: " << argv[0] << " --keybase <dir> --n <N>\n"
@@ -38,7 +49,11 @@ int main(int argc, char* argv[]) try {
 
     // One directory per parameter set. The path is printed for the harness to
     // read, so nothing has to reconstruct the naming rule in two languages.
-    const usint depth = dotprod::MULT_DEPTH;
+    // Depth this op's circuit needs: the recorded value for a shipped op, a
+    // measurement for anything else. Key size scales with the modulus chain, so
+    // the shallow ops stop paying for levels the deep one needs.
+    const dotprod::Op op = dotprod::ParseOp(opStr);
+    const usint depth = dotprod::RequiredDepth(op, n);
     const std::filesystem::path keydir =
         std::filesystem::path(keybase) / dotprod::ContextFingerprint(depth) / "keys";
     if (std::filesystem::exists(keydir / "cc.bin")) {
